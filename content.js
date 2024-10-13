@@ -1,29 +1,44 @@
-function summarizeHeadlines() {
+async function summarizeHeadlines() {
+  let counter = 0;
+  const limit = 30;
+
   // This function will be injected into the page
-  let headlines = document.querySelectorAll('a');
-  headlines.forEach(async (headline) => {
-    const articleUrl = headline.href;
-    if (articleUrl) {
-      const summary = await fetchSummary(articleUrl);
-      headline.textContent = summary;
-    }
+  let headlines = Array.from(document.querySelectorAll('a, h1, h2, h3, h4, h5, h6'));
+
+  // Filter out headlines with images
+  headlines = headlines.filter(headline => !headline.querySelector('img'));
+
+  // Filter out subject headlines
+  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 2);
+
+  // Sort headlines by font size in descending order
+  headlines.sort((a, b) => {
+    const fontSizeA = parseFloat(window.getComputedStyle(a).fontSize);
+    const fontSizeB = parseFloat(window.getComputedStyle(b).fontSize);
+    return fontSizeB - fontSizeA;
   });
 
-  headlines = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
-  headlines.forEach(async (headline) => {
-    const articleLink = headline.closest('a');
-    let articleUrl = articleLink?.href;
+  // Process only the top 20 headlines
+  let promises = [];
+  for (let i = 0; i < Math.min(limit, headlines.length); i++) {
+    const headline = headlines[i];
+    const articleUrl = headline.href || headline.closest('a')?.href;
     if (articleUrl) {
-      const summary = await fetchSummary(articleUrl);
-      headline.textContent = summary;
+      promises.push(
+        fetchSummary(articleUrl).then(summary => {
+          headline.textContent = summary;
+          counter++;
+        })
+      );
     }
-  });
+  }
 
+  await Promise.all(promises);
 }
 
 async function fetchSummary(url) {
-  // // This is a placeholder function. You'll need to implement the actual API call.
-  // const response = await fetch('YOUR_LANGUAGE_MODEL_API_ENDPOINT', {
+  // This is a placeholder function. You'll need to implement the actual API call.
+  // const response = await fetch('YOUR_LANGUAGE_MODEL_API', {
   //   method: 'POST',
   //   headers: {
   //     'Content-Type': 'application/json',
