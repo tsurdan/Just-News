@@ -3,7 +3,7 @@
   "name": "News Headline Summarizer",
   "version": "1.0",
   "description": "Replaces clickbait headlines with informative summaries",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["activeTab", "scripting", "webRequest"],
   "action": {
     "default_icon": {
       "16": "icon16.png",
