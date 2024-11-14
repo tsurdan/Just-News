@@ -1,6 +1,6 @@
 async function summarizeHeadlines() {
   let counter = 0;
-  const limit = 1;
+  const limit = 20;
 
   // This function will be injected into the page
   let headlines = Array.from(document.querySelectorAll('a, h1, h2, h3, h4, h5, h6'));
@@ -29,7 +29,7 @@ async function summarizeHeadlines() {
     const articleUrl = headline.href || headline.closest('a')?.href;
     if (articleUrl) {
       promises.push(
-        summarizeContnet(articleUrl).then(summary => {
+        fetchSummary(articleUrl).then(summary => {
           headline.textContent = summary;
           counter++;
         })
@@ -58,51 +58,72 @@ async function summarizeHeadlines() {
   // return content.split('\n').slice(0, 5).join(' '); // Return the first 5 lines as a summary
   //return "Headline!";
 //}
-
-function fetchSummary(url) {
-  return new Promise((resolve, reject) => {
-    fetchContent(url)
-      .then(content => summarizeContnet(content))
-      .then(summary => resolve(summary))
-      .catch(error => {
-        console.error('Error fetching or summarizing content:', error);
-        reject('Error fetching summary5');
-      });
-  });
+async function fetchSummary(url) {
+  let summary = "";
+  try {
+    const content = await fetchContent(url);
+    summary = await summarizeContnet(content);//.split(' ').slice(0, 50).join(' '));
+  } catch (error) {
+    throw new Error('Error fetching summary5 ' + error);
+  }
+  return summary;
+  // return new Promise((resolve, reject) => {
+  //   fetchContent(url)
+  //     .then(content => summarizeContnet(content))
+  //     .then(summary => resolve(summary))
+  //     .catch(error => {
+  //       console.error('Error fetching or summarizing content:', error);
+  //       reject('Error fetching summary5');
+  //     });
+  // });
 }
 
 // Send a message to the background script to fetch a summary
-function fetchContent(url) {
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ action: 'fetchSummary', url: url }, response => {
-      if (response && response.html) {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(response.html, 'text/html');
+async function fetchContent(url) {
+  const response = await chrome.runtime.sendMessage({ action: 'fetchSummary', url: url });
+  if (!response || !response.html) {
+    throw new Error('Error fetching summary6');
+  }
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(response.html, 'text/html');
+  const paragraphs = Array.from(doc.querySelectorAll('p'));
+  let content = paragraphs.map(p => p.textContent).join(' ').trim();
+  return content;
+  // return new Promise((resolve, reject) => {
+  //   chrome.runtime.sendMessage({ action: 'fetchSummary', url: url }, response => {
+  //     if (response && response.html) {
+  //       const parser = new DOMParser();
+  //       const doc = parser.parseFromString(response.html, 'text/html');
         
-        // Extract text content from <p> tags
-        const paragraphs = Array.from(doc.querySelectorAll('p'));
-        let content = paragraphs.map(p => p.textContent).join(' ').trim();
+  //       // Extract text content from <p> tags
+  //       const paragraphs = Array.from(doc.querySelectorAll('p'));
+  //       let content = paragraphs.map(p => p.textContent).join(' ').trim();
         
-        // Return the first 5 lines as a summary
-        content = content.split('\n').slice(0, 5).join(' ');
-        resolve(content)
-        } else {
-        reject('Error fetching summary6');
-      }
-    });
-  });
+  //       // Return the first 5 lines as a summary
+  //       content = content.split('\n').slice(0, 5).join(' ');
+  //       resolve(content)
+  //       } else {
+  //       reject('Error fetching summary6');
+  //     }
+  //   });
+  // });
 }
 
-function summarizeContnet(content) {
-  const prompt = "please summarize this article to an informative and short headline, in the source language: " + content;
-  return new Promise((resolve, reject) => {
-    chrome.runtime.sendMessage({ action: 'AIcall', prompt: prompt }, response => {
-      if (response && response.summary) {
-        resolve(response.summary);
-      }else {
-        reject('Error fetching summary7');
-      }
-    })});
+async function summarizeContnet(content) {
+  const prompt = "please summarize this article to an informative (not clickbate) and short headline, in the article language: " + content;
+  const response = await chrome.runtime.sendMessage({ action: 'AIcall', prompt: prompt });
+  if (!response ||  !response.summary) {
+    throw new Error('Error fetching summary7');
+  }
+  return response.summary;
+  // return new Promise((resolve, reject) => {
+  //   chrome.runtime.sendMessage({ action: 'AIcall', prompt: prompt }, response => {
+  //     if (response && response.summary) {
+  //       resolve(response.summary);
+  //     }else {
+  //       reject('Error fetching summary7');
+  //     }
+  //   })});
 }
 
 // Listen for messages from the background script

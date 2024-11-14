@@ -2,8 +2,9 @@
   "manifest_version": 3,
   "name": "News Headline Summarizer",
   "version": "1.0",
-  "description": "Replaces clickbait headlines with informative summaries",
+  "description": "Replaces clickbate headlines with informative summaries",
   "permissions": ["activeTab", "scripting", "webRequest"],
+  "host_permissions": ["https://api.aimlapi.com/v1/chat/completions", "https://api.aimlapi.com/*"],
   "action": {
     "default_icon": {
       "16": "icon16.png",

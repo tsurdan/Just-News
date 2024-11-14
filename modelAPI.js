@@ -2,10 +2,10 @@
 //import { OpenAI } from "openai";
 import fetch from "node-fetch";
 
-const baseURL =  "https://api.aimlapi.com/v1/chat/completions";
-const apiKey = "dd6d0596ce7b4bc2825a316c87dfc1b7";
-const systemPrompt = "You are a travel agent. Be descriptive and helpful";
-const prompt = "Tell me about San Francisco";
+const baseURL =  "https://api.groq.com/openai/v1/chat/completions";
+const apiKey = "";
+const systemPrompt = "You are a travel agent. Be descriptive and helpful ansower in the user language(hebrew)";
+const prompt = "תספר לי בבקשה קצת על סן פרנסיסקו";
 
 // const api = new OpenAI({
 //   apiKey,
@@ -14,7 +14,7 @@ const prompt = "Tell me about San Francisco";
 
 const main = async () => {
       const body = JSON.stringify({
-      model: "gpt-4o-2024-05-13", //claude-3-opus-20240229
+      model: "llama-3.1-70b-versatile", //claude-3-opus-20240229
       messages: [
         {
           role: "system",
@@ -26,7 +26,7 @@ const main = async () => {
         },
       ],
       temperature: 0.2,
-      max_tokens: 20,
+      max_tokens: 100,
     });
 
     fetch(baseURL, {

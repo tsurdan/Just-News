@@ -21,13 +21,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'AIcall') {
 
-    const apiKey = "dd6d0596ce7b4bc2825a316c87dfc1b7";
+    const apiKey = "";
     const systemPrompt = "You are a punctual and tough journalist. Give informative and short headlines as much as possible";
-    const baseURL = "https://api.aimlapi.com/v1/chat/completions";
+    const baseURL = "https://api.groq.com/openai/v1/chat/completions";
 
     const prompt = request.prompt;
     const body = JSON.stringify({
-      model: "gpt-4o-2024-05-13", //claude-3-opus-20240229
+      model: "llama-3.1-70b-versatile", //claude-3-opus-20240229 gpt-4o-2024-05-13
       messages: [
         {
           role: "system",
@@ -39,7 +39,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         },
       ],
       temperature: 0.2,
-      max_tokens: 20,
+      max_tokens: 50,
     });
 
     fetch(baseURL, {
@@ -50,23 +50,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       },
       body: body,
     })
-    .then(response => {/*response.json()*/
-      sendResponse({ summary: "response1" });
-      return true; }// Will respond asynchronously
-    )
+    .then(response => response.json())
     .then(data => {
-      const response1 = JSON.stringify(data.choices[0].message.content);
-
-      console.log("User:", prompt);
-      console.log("AI:", response1);
-
-      sendResponse({ summary: response1 });
-      return true; // Will respond asynchronously
+      const summary = JSON.stringify(data.choices[0].message.content);
+      //const summary = JSON.stringify(data);
+      sendResponse({ summary: summary });
     })
+    // .then(data => {
+    //   const response1 = JSON.stringify(data.choices[0].message.content);
+
+    //   console.log("User:", prompt);
+    //   console.log("AI:", response1);
+
+    //   sendResponse({ summary: response1 });
+    //   return true; // Will respond asynchronously
+    // })
     .catch(error => {
       console.error('Error fetching summary3:', error);
       sendResponse({ summary: `Error fetching summary4 ${error}` });
     });
+    return true;// Will respond asynchronously
     //sendResponse("headlineheadline");
 
   }
