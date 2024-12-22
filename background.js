@@ -21,7 +21,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'AIcall') {
 
-    const apiKey = "";
+    const apiKey = request.apiKey;//"";
     const systemPrompt = "You are a punctual and tough journalist. Give informative and short headlines as much as possible";
     const baseURL = "https://api.groq.com/openai/v1/chat/completions";
 
