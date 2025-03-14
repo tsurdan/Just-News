@@ -4,15 +4,14 @@ chrome.action.onClicked.addListener((tab) => {
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'fetchSummary') {
+  if (request.action === 'fetchContent') {
     fetch(request.url)
       .then(response => response.text())
       .then(text => {
         sendResponse({ html: text });
       })
       .catch(error => {
-        console.error('Error fetching summary1:', error);
-        sendResponse({ html: `Error fetching summary2 ${error}` });
+        sendResponse({ error: error.message });
       });
     return true; // Will respond asynchronously
   }
@@ -20,7 +19,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'AIcall') {
-
+    console.log(request.prompt);
     const apiKey = request.apiKey;//"";
     const systemPrompt = "You are a punctual and tough journalist. Give informative and short headlines as much as possible";
     const baseURL = "https://api.groq.com/openai/v1/chat/completions";
@@ -66,8 +65,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     //   return true; // Will respond asynchronously
     // })
     .catch(error => {
-      console.error('Error fetching summary3:', error);
-      sendResponse({ summary: `Error fetching summary4 ${error}` });
+      // TODO: remove
+      sendResponse({ summary: "~ סיכום קצר ואינפורמטיבי" });
+      //sendResponse({ error: error.message });
     });
     return true;// Will respond asynchronously
     //sendResponse("headlineheadline");

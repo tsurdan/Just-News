@@ -3,7 +3,7 @@
   "name": "News Headline Summarizer",
   "version": "1.0",
   "description": "Replaces clickbate headlines with informative summaries",
-  "permissions": ["activeTab", "scripting", "webRequest", "storage"],
+  "permissions": ["activeTab", "scripting", "webRequest", "storage", "notifications"],
   "host_permissions": ["https://api.aimlapi.com/v1/chat/completions", "https://api.aimlapi.com/*"],
   "action": {
     "default_icon": {

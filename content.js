@@ -1,10 +1,18 @@
+// TODO: improve extracting data
+// TODO: build llm picker 
+// TODO: optimization of AI configurations
+// TODO: check a bit of legals
+
 let isInitialized = false;
+let counter = 0;
 
 function initializeContentScript() {
   if (isInitialized) return;
 
+  // Listen for messages from the background script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'summarizeHeadlines') {
+      counter = 0;
       summarizeHeadlines();
       sendResponse({status: 'Processing started'});
     }
@@ -15,43 +23,84 @@ function initializeContentScript() {
 }
 
 async function summarizeHeadlines() {
-  let apiKey;
-  try {
-    apiKey = await getApiKey();
-    if (!apiKey) {
-      await promptForApiKey('Please enter your API key');
-      return;
-    }
-  } catch (error) {
-    console.error('Error checking API key:', error);
-    showNotification('Error checking API key. Please try again.');
-  }
-  let counter = 0;
+  let apiKey = "";
+  // try {
+  //   apiKey = await getApiKey();
+  //   if (!apiKey) {
+  //     await promptForApiKey('Please enter your API key');
+  //     return;
+  //   }
+  // } catch (error) {
+  //   console.error('Error checking API key:', error);
+  //   await createNotification('Error checking API key. Please try again.');
+  // }
   const limit = 20;
 
   // This function will be injected into the page
-  let headlines = Array.from(document.querySelectorAll('a, h1, h2, h3, h4, h5, h6'));
-
+  let headlines = Array.from(document.querySelectorAll('a, a span, h1, h2, h3, h4, h5, h6, span[class*="title"], strong[data-type*="title"], span[class*="headline"], strong[data-type*="headline"], span[data-type*="title"], strong[class*="title"], span[data-type*="headline"], strong[class*="headline"], span[class*="Title"], strong[data-type*="Title"], span[class*="Headline"], strong[data-type*="Headline"], span[data-type*="Title"], strong[class*="Title"], span[data-type*="Headline"], strong[class*="Headline"]'));
+  
   // Filter out headlines with images
   headlines = headlines.filter(headline => !headline.querySelector('img'));
 
-  // Filter out subject headlines
-  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 2);
+  // // Find the majority headlines url hostname
+  // const hostnameCounts = headlines.reduce((acc, headline) => {
+  //   const articleUrl = headline.href || headline.closest('a')?.href;
+  //   if (articleUrl) {
+  //     try {
+  //       const url = new URL(articleUrl);
+  //       acc[url.hostname] = (acc[url.hostname] || 0) + 1;
+  //     } catch (error) {
+  //       console.error('Invalid URL:', articleUrl);
+  //     }
+  //   }
+  //   return acc;
+  // }, {});
 
-  headlines = headlines.slice(0,40);
+  // const majorityHostname = Object.keys(hostnameCounts).reduce((a, b) => 
+  //   hostnameCounts[a] > hostnameCounts[b] ? a : b
+  // , '');
+
+  // // Filter out headlines that are not links or link to another website
+  // const currentDomain = window.location.hostname;
+  // headlines = headlines.filter(headline => {
+  //   try {
+  //     const articleUrl = headline.href || headline.closest('a')?.href;
+  //     if (articleUrl) {
+  //       const url = new URL(articleUrl);
+  //       return url.hostname === currentDomain || url.hostname === majorityHostname;
+  //     }
+  //     return false;
+  //   } catch {
+  //     return false;
+  //   }
+
+  // });
+
+  // Filter out headlines that are not in the user's screen frame with a little extra space
+  const viewportHeight = window.innerHeight;
+  const viewportTop = window.scrollY - 300; // Add extra space at the top
+  const viewportBottom = viewportTop + viewportHeight + 300; // Add extra space at the bottom
+
+  headlines = headlines.filter(headline => {
+    const rect = headline.getBoundingClientRect();
+    const headlineTop = rect.top + window.scrollY;
+    const headlineBottom = rect.bottom + window.scrollY;
+    return (headlineTop >= viewportTop && headlineBottom <= viewportBottom);
+  });
+
+  // Filter out subject headlines
+  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 3);
 
   // Sort headlines by font size in descending order
-
   headlines.sort((a, b) => {
     const fontSizeA = parseFloat(window.getComputedStyle(a).fontSize);
     const fontSizeB = parseFloat(window.getComputedStyle(b).fontSize);
     return fontSizeB - fontSizeA;
   });
 
-
-  // Process only the top 20 headlines
+  // Process only the top <limit> headlines
   let promises = [];
-  for (let i = 0; i < Math.min(limit, headlines.length); i++) {
+  for (let i = counter; i < Math.min(limit + counter, headlines.length); i++) {
     const headline = headlines[i];
     const articleUrl = headline.href || headline.closest('a')?.href;
     if (articleUrl) {
@@ -60,11 +109,18 @@ async function summarizeHeadlines() {
           headline.textContent = summary;
           counter++;
         })
+        .catch(error => {
+          throw new Error(error.message);
+        })
       );
     }
   }
 
-  await Promise.all(promises);
+  try {
+    await Promise.all(promises);
+  } catch (error) {
+    createNotification(error.message);
+  }
 }
 
 // async function fetchSummary(url) {
@@ -91,7 +147,7 @@ async function fetchSummary(url, apiKey) {
     const content = await fetchContent(url);
     summary = await summarizeContnet(content, apiKey);//.split(' ').slice(0, 50).join(' '));
   } catch (error) {
-    throw new Error('Error fetching summary5 ' + error);
+    throw new Error(error.message);
   }
   return summary;
   // return new Promise((resolve, reject) => {
@@ -107,9 +163,9 @@ async function fetchSummary(url, apiKey) {
 
 // Send a message to the background script to fetch a summary
 async function fetchContent(url) {
-  const response = await chrome.runtime.sendMessage({ action: 'fetchSummary', url: url });
-  if (!response || !response.html) {
-    throw new Error('Error fetching summary6');
+  const response = await chrome.runtime.sendMessage({ action: 'fetchContent', url: url });
+  if (!response || response?.error || !response.html) {
+    throw new Error('Error fetching article content' + response?.error);
   }
   const parser = new DOMParser();
   const doc = parser.parseFromString(response.html, 'text/html');
@@ -139,8 +195,8 @@ async function fetchContent(url) {
 async function summarizeContnet(content, apiKey) {
   const prompt = "please summarize this article to an informative (not clickbate) and short headline, in the article language: " + content;
   const response = await chrome.runtime.sendMessage({ action: 'AIcall', prompt: prompt, apiKey: apiKey });
-  if (!response ||  !response.summary) {
-    throw new Error('Error fetching summary7');
+  if (!response || response?.error ||  !response.summary) {
+    throw new Error('Error fetching AI summary ' + response?.error);
   }
   return response.summary;
   // return new Promise((resolve, reject) => {
@@ -157,6 +213,7 @@ async function getApiKey() {
   const result = await chrome.storage.sync.get(['apiKey']);
   return result.apiKey;
 }
+
 
 function createApiKeyPrompt(message, currentKey = '') {
   const overlay = document.createElement('div');
@@ -240,6 +297,53 @@ function createApiKeyPrompt(message, currentKey = '') {
   return { overlay, input, submitButton, cancelButton };
 }
 
+function createNotificationPrompt(message) {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+  `;
+
+  const promptBox = document.createElement('div');
+  promptBox.style.cssText = `
+    background: white;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    width: 300px;
+  `;
+
+  const title = document.createElement('h3');
+  title.textContent = message;
+  title.style.marginBottom = '15px';
+
+  const cancelButton = document.createElement('button');
+  cancelButton.textContent = 'OK';
+  cancelButton.style.cssText = `
+    background: #gray;
+    border: 1px solid #ccc;
+    padding: 8px 16px;
+    border-radius: 4px;
+    cursor: pointer;
+    align-self: flex-center;
+  `;
+
+  promptBox.appendChild(title);
+  promptBox.appendChild(cancelButton);
+  overlay.appendChild(promptBox);
+
+  return { overlay, cancelButton };
+}
+
+
 async function promptForApiKey(message, currentKey = '') {
   return new Promise((resolve, reject) => {
     const { overlay, input, submitButton, cancelButton } = createApiKeyPrompt(message, currentKey);
@@ -264,12 +368,16 @@ async function promptForApiKey(message, currentKey = '') {
   });
 }
 
-// Listen for messages from the background script
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'summarizeHeadlines') {
-    summarizeHeadlines();
-  }
-});
+async function createNotification(message) {
+  return new Promise((resolve, reject) => {
+    const { overlay, cancelButton } = createNotificationPrompt(message);
+    document.body.appendChild(overlay);
 
+    cancelButton.onclick = () => {
+      document.body.removeChild(overlay);
+      resolve(null);
+    };
+  });
+}
 
 initializeContentScript();
