@@ -14,7 +14,7 @@ const prompt = "תספר לי בבקשה קצת על סן פרנסיסקו";
 
 const main = async () => {
       const body = JSON.stringify({
-      model: "llama-3.1-70b-versatile", //claude-3-opus-20240229
+      model: "gemma2-9b-it", //claude-3-opus-20240229
       messages: [
         {
           role: "system",

@@ -1,4 +1,5 @@
-// TODO: improve extracting data
+// TODO: fix rtelimit
+// TODO: add ~ to titles, mke mx_tokens dynmic
 // TODO: build llm picker 
 // TODO: optimization of AI configurations
 // TODO: check a bit of legals
@@ -24,6 +25,7 @@ function initializeContentScript() {
 
 async function summarizeHeadlines() {
   let apiKey = "";
+  // TODO: remove
   // try {
   //   apiKey = await getApiKey();
   //   if (!apiKey) {
@@ -78,8 +80,8 @@ async function summarizeHeadlines() {
 
   // Filter out headlines that are not in the user's screen frame with a little extra space
   const viewportHeight = window.innerHeight;
-  const viewportTop = window.scrollY - 300; // Add extra space at the top
-  const viewportBottom = viewportTop + viewportHeight + 300; // Add extra space at the bottom
+  const viewportTop = window.scrollY //- 300; // Add extra space at the top
+  const viewportBottom = viewportTop + viewportHeight //+ 300; // Add extra space at the bottom
 
   headlines = headlines.filter(headline => {
     const rect = headline.getBoundingClientRect();
@@ -106,7 +108,8 @@ async function summarizeHeadlines() {
     if (articleUrl) {
       promises.push(
         fetchSummary(articleUrl, apiKey).then(summary => {
-          headline.textContent = summary;
+          const sanitizedSummary = summary.replace(/[\r\n]+/g, ' ').trim();
+          headline.textContent = sanitizedSummary;
           counter++;
         })
         .catch(error => {
@@ -116,10 +119,12 @@ async function summarizeHeadlines() {
     }
   }
 
-  try {
-    await Promise.all(promises);
-  } catch (error) {
-    createNotification(error.message);
+  const results = await Promise.allSettled(promises);
+  const succes = results.filter(result => result.status === 'fulfilled');  
+  const errors = results.filter(result => result.status === 'rejected');
+  if (succes.length === 0 && errors.length > 0) {
+    const uniqueErrors = [...new Set(errors.map(e => e.reason.message))];
+    await createNotification(`Error summarizing some articles: ` + uniqueErrors.join(', '));
   }
 }
 
@@ -169,27 +174,30 @@ async function fetchContent(url) {
   }
   const parser = new DOMParser();
   const doc = parser.parseFromString(response.html, 'text/html');
+  
+  // Remove script and style tags
+  doc.querySelectorAll('script, style').forEach(tag => tag.remove());
+
+  // Extract text content from <p> tags
   const paragraphs = Array.from(doc.querySelectorAll('p'));
   let content = paragraphs.map(p => p.textContent).join(' ').trim();
+  
+  // If no content found in <p> tags, try other tags
+  if (!content || content.length === 0) {
+    const otherTags = Array.from(doc.querySelectorAll('div, span, article'));
+    const uniqueSentences = new Set();
+    otherTags.forEach(tag => {
+      const sentences = tag.textContent.split('.').map(sentence => sentence.trim()).filter(sentence => sentence.length > 0);
+      sentences.forEach(sentence => uniqueSentences.add(sentence));
+    });
+    content = Array.from(uniqueSentences).join('. ');
+  }
+
+  if (!content || content.length === 0) {
+    throw new Error('Error extracting article content');
+  }
+  
   return content;
-  // return new Promise((resolve, reject) => {
-  //   chrome.runtime.sendMessage({ action: 'fetchSummary', url: url }, response => {
-  //     if (response && response.html) {
-  //       const parser = new DOMParser();
-  //       const doc = parser.parseFromString(response.html, 'text/html');
-        
-  //       // Extract text content from <p> tags
-  //       const paragraphs = Array.from(doc.querySelectorAll('p'));
-  //       let content = paragraphs.map(p => p.textContent).join(' ').trim();
-        
-  //       // Return the first 5 lines as a summary
-  //       content = content.split('\n').slice(0, 5).join(' ');
-  //       resolve(content)
-  //       } else {
-  //       reject('Error fetching summary6');
-  //     }
-  //   });
-  // });
 }
 
 async function summarizeContnet(content, apiKey) {
