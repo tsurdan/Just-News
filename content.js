@@ -1,8 +1,3 @@
-// TODO: fix rtelimit
-// TODO: add ~ to titles, mke mx_tokens dynmic
-// TODO: build llm picker 
-// TODO: optimization of AI configurations
-// TODO: check a bit of legals
 
 let isInitialized = false;
 let counter = 0;
@@ -25,17 +20,15 @@ function initializeContentScript() {
 
 async function summarizeHeadlines() {
   let apiKey = "";
-  // TODO: remove
-  // try {
-  //   apiKey = await getApiKey();
-  //   if (!apiKey) {
-  //     await promptForApiKey('Please enter your API key');
-  //     return;
-  //   }
-  // } catch (error) {
-  //   console.error('Error checking API key:', error);
-  //   await createNotification('Error checking API key. Please try again.');
-  // }
+  try {
+    apiKey = await getApiKey();
+    if (!apiKey) {
+      await promptForApiKey('Please enter your API key');
+      return;
+    }
+  } catch (error) {
+    await createNotification('Error checking API key. Please try again.');
+  }
   const limit = 20;
 
   // This function will be injected into the page
@@ -44,44 +37,10 @@ async function summarizeHeadlines() {
   // Filter out headlines with images
   headlines = headlines.filter(headline => !headline.querySelector('img'));
 
-  // // Find the majority headlines url hostname
-  // const hostnameCounts = headlines.reduce((acc, headline) => {
-  //   const articleUrl = headline.href || headline.closest('a')?.href;
-  //   if (articleUrl) {
-  //     try {
-  //       const url = new URL(articleUrl);
-  //       acc[url.hostname] = (acc[url.hostname] || 0) + 1;
-  //     } catch (error) {
-  //       console.error('Invalid URL:', articleUrl);
-  //     }
-  //   }
-  //   return acc;
-  // }, {});
-
-  // const majorityHostname = Object.keys(hostnameCounts).reduce((a, b) => 
-  //   hostnameCounts[a] > hostnameCounts[b] ? a : b
-  // , '');
-
-  // // Filter out headlines that are not links or link to another website
-  // const currentDomain = window.location.hostname;
-  // headlines = headlines.filter(headline => {
-  //   try {
-  //     const articleUrl = headline.href || headline.closest('a')?.href;
-  //     if (articleUrl) {
-  //       const url = new URL(articleUrl);
-  //       return url.hostname === currentDomain || url.hostname === majorityHostname;
-  //     }
-  //     return false;
-  //   } catch {
-  //     return false;
-  //   }
-
-  // });
-
-  // Filter out headlines that are not in the user's screen frame with a little extra space
+  // Filter out headlines that are not in the user's screen frame
   const viewportHeight = window.innerHeight;
-  const viewportTop = window.scrollY //- 300; // Add extra space at the top
-  const viewportBottom = viewportTop + viewportHeight //+ 300; // Add extra space at the bottom
+  const viewportTop = window.scrollY // Maybe Add extra space to the frame?
+  const viewportBottom = viewportTop + viewportHeight
 
   headlines = headlines.filter(headline => {
     const rect = headline.getBoundingClientRect();
@@ -104,12 +63,13 @@ async function summarizeHeadlines() {
   let promises = [];
   for (let i = counter; i < Math.min(limit + counter, headlines.length); i++) {
     const headline = headlines[i];
+    const sourceHeadline = headline.textContent;
     const articleUrl = headline.href || headline.closest('a')?.href;
     if (articleUrl) {
       promises.push(
-        fetchSummary(articleUrl, apiKey).then(summary => {
+        fetchSummary(sourceHeadline, articleUrl, apiKey).then(summary => {
           const sanitizedSummary = summary.replace(/[\r\n]+/g, ' ').trim();
-          headline.textContent = sanitizedSummary;
+          headline.textContent = `~` + sanitizedSummary;
           counter++;
         })
         .catch(error => {
@@ -128,42 +88,15 @@ async function summarizeHeadlines() {
   }
 }
 
-// async function fetchSummary(url) {
-  // This is a placeholder function. You'll need to implement the actual API call.
-  // const response = await fetch('YOUR_LANGUAGE_MODEL_API', {
-  //   method: 'POST',
-  //   headers: {
-  //     'Content-Type': 'application/json',
-  //   },
-  //   body: JSON.stringify({ url: url }),
-  // });
-  // const data = await response.json();
-  // const response = await fetch(url);
-  // const text = await response.text();
-  // const parser = new DOMParser();
-  // const doc = parser.parseFromString(text, 'text/html');
-  // const content = doc.body.innerText;
-  // return content.split('\n').slice(0, 5).join(' '); // Return the first 5 lines as a summary
-  //return "Headline!";
-//}
-async function fetchSummary(url, apiKey) {
+async function fetchSummary(sourceHeadline, url, apiKey) {
   let summary = "";
   try {
     const content = await fetchContent(url);
-    summary = await summarizeContnet(content, apiKey);//.split(' ').slice(0, 50).join(' '));
+    summary = await summarizeContnet(sourceHeadline, content, apiKey);
   } catch (error) {
     throw new Error(error.message);
   }
   return summary;
-  // return new Promise((resolve, reject) => {
-  //   fetchContent(url)
-  //     .then(content => summarizeContnet(content))
-  //     .then(summary => resolve(summary))
-  //     .catch(error => {
-  //       console.error('Error fetching or summarizing content:', error);
-  //       reject('Error fetching summary5');
-  //     });
-  // });
 }
 
 // Send a message to the background script to fetch a summary
@@ -178,13 +111,30 @@ async function fetchContent(url) {
   // Remove script and style tags
   doc.querySelectorAll('script, style').forEach(tag => tag.remove());
 
+  // Remove common non-article sections
+  const nonArticleSelectors = [
+    'header', 'footer', 'nav', 'aside', '.sidebar', '.nav', '.footer', '.header', '.advertisement', '.ad', '.promo'
+  ];
+  nonArticleSelectors.forEach(selector => {
+    doc.querySelectorAll(selector).forEach(tag => tag.remove());
+  });
+
   // Extract text content from <p> tags
   const paragraphs = Array.from(doc.querySelectorAll('p'));
   let content = paragraphs.map(p => p.textContent).join(' ').trim();
   
-  // If no content found in <p> tags, try other tags
   if (!content || content.length === 0) {
-    const otherTags = Array.from(doc.querySelectorAll('div, span, article'));
+    const otherTags = Array.from(doc.querySelectorAll('span'));
+    const uniqueSentences = new Set();
+    otherTags.forEach(tag => {
+      const sentences = tag.textContent.split('.').map(sentence => sentence.trim()).filter(sentence => sentence.length > 0);
+      sentences.forEach(sentence => uniqueSentences.add(sentence));
+    });
+    content = Array.from(uniqueSentences).join('. ');
+  }
+
+  if (!content || content.length === 0) {
+    const otherTags = Array.from(doc.querySelectorAll('article'));
     const uniqueSentences = new Set();
     otherTags.forEach(tag => {
       const sentences = tag.textContent.split('.').map(sentence => sentence.trim()).filter(sentence => sentence.length > 0);
@@ -200,21 +150,21 @@ async function fetchContent(url) {
   return content;
 }
 
-async function summarizeContnet(content, apiKey) {
-  const prompt = "please summarize this article to an informative (not clickbate) and short headline, in the article language: " + content;
-  const response = await chrome.runtime.sendMessage({ action: 'AIcall', prompt: prompt, apiKey: apiKey });
+async function summarizeContnet(sourceHeadline, content, apiKey) {
+  const prompt = `Rewrite the headline with these rules:
+
+Robotic, factual, no clickbait.
+Keep the original language and length.
+If the title is a question, answer it.
+Original: ${sourceHeadline}
+Article: ${content}
+
+Return only the new headline.`;
+  const response = await chrome.runtime.sendMessage({ action: 'AIcall', sourceHeadline: sourceHeadline, prompt: prompt, apiKey: apiKey });
   if (!response || response?.error ||  !response.summary) {
     throw new Error('Error fetching AI summary ' + response?.error);
   }
   return response.summary;
-  // return new Promise((resolve, reject) => {
-  //   chrome.runtime.sendMessage({ action: 'AIcall', prompt: prompt }, response => {
-  //     if (response && response.summary) {
-  //       resolve(response.summary);
-  //     }else {
-  //       reject('Error fetching summary7');
-  //     }
-  //   })});
 }
 
 async function getApiKey() {

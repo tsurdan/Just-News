@@ -15,23 +15,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     return true; // Will respond asynchronously
   } else if (request.action === 'AIcall') {
-    console.log(request.prompt)
+
     const apiKey = request.apiKey;
-    const systemPrompt = "You are a punctual and tough journalist. Give informative and short headlines as much as possible";
+    const systemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer.`;
     const baseURL = "https://api.groq.com/openai/v1/chat/completions";
 
     let prompt = request.prompt;
-
-
-    // Calculate the number of tokens in the request
-    let tokenCount = calculateTokens(systemPrompt + prompt);
-    const maxAllowedTokens = 10000;
-
-    if (tokenCount > maxAllowedTokens) {
-      const words = prompt.split(/\s+/);
-      prompt = words.slice(0, maxAllowedTokens).join(' ');
-      tokenCount = calculateTokens(systemPrompt + truncatedPrompt);
-    }
 
     const body = JSON.stringify({
       model: "gemma2-9b-it",
@@ -45,8 +34,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           content: prompt,
         },
       ],
-      temperature: 0.2,
+      temperature: 0.0,
       max_tokens: 50,
+      top_p: 0.4,
+      frequency_penalty: 0.0,
+      presence_penalty: 0.0,
     });
 
     fetch(baseURL, {
@@ -57,7 +49,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       },
       body: body,
     })
-    .then(response => response.json())
+    .then(response => { 
+      if (!response.ok) {
+        if (response.status === 429) {
+        throw new Error('Rate limit. Try again in a minute');
+      }
+      if (response.status === 401) {
+        throw new Error('Invalid API key');
+      }
+      throw new Error('Error fetching summary');
+      } else {
+        return response.json();
+      }})
     .then(data => {
       let summary = data.choices[0].message.content;
       summary = summary.replace(/[\r\n]+/g, ' ').trim(); // Remove newlines and trim
@@ -67,16 +70,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ summary: summary });
     })
     .catch(error => {
-      console.error("error: ", error.message);
       sendResponse({ error: error.message });
     });
     return true; // Will respond asynchronously
   }
 });
-
-// Function to calculate the number of tokens in a text
-function calculateTokens(text) {
-  // This is a simple approximation. You may need a more accurate method depending on your use case.
-  return text.split(/\s+/).length;
-}
 

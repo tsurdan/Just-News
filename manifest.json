@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "News Headline Summarizer",
+  "name": "Just News",
   "version": "1.0",
   "description": "Replaces clickbate headlines with informative summaries",
-  "permissions": ["activeTab", "scripting", "webRequest", "storage", "notifications"],
+  "permissions": ["activeTab", "scripting", "webRequest", "storage"],
   "host_permissions": ["https://api.aimlapi.com/v1/chat/completions", "https://api.aimlapi.com/*"],
   "action": {
     "default_icon": {
