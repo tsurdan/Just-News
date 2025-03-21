@@ -19,7 +19,7 @@
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
+      "matches": ["https://*.n12.co.il/*", "https://*.mako.co.il/*", "https://*.ynet.co.il/*", "https://*.walla.co.il/*", "https://*.haaretz.co.il/*", "https://*.calcalist.co.il/*", "https://*.globes.co.il/*", "https://*.themarker.com/*", "https://*.bizportal.co.il/*", "https://*.bloomberg.co.il/*", "https://*.israelhayom.co.il/*", "https://*.jpost.com/*", "https://*.timesofisrael.com/*", "https://*.ynetnews.com/*", "https://*.hamodia.com/*", "https://*.kolhalev.co.il/*", "https://*.mida.org.il/*", "https://*.israelnationalnews.com/*", "https://*.jewishpress.com/*", "https://*.kikar.co.il/*", "https://*.now14.co.il/*", "https://*.kan.org.il/*", "https://*.nytimes.com/*", "https://*.washingtonpost.com/*", "https://*.wsj.com/*", "https://*.theguardian.com/*", "https://*.bbc.com/*", "https://*.reuters.com/*", "https://*.apnews.com/*", "https://*.aljazeera.com/*", "https://*.cnn.com/*", "https://*.foxnews.com/*", "https://*.nbcnews.com/*", "https://*.usatoday.com/*", "https://*.huffpost.com/*", "https://*.buzzfeednews.com/*", "https://*.vox.com/*", "https://*.vice.com/*", "https://*.salon.com/*", "https://*.slate.com/*", "https://*.politico.com/*", "https://*.theatlantic.com/*", "https://*.newyorker.com/*", "https://*.economist.com/*", "https://*.ft.com/*", "https://*.bloomberg.com/*", "https://*.forbes.com/*", "https://*.businessinsider.com/*", "https://*.cnbc.com/*", "https://*.marketwatch.com/*", "https://*.barrons.com/*", "https://*.investopedia.com/*", "https://*.seekingalpha.com/*", "https://*.zerohedge.com/*"],
       "js": ["content.js"]
     }
   ]
