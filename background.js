@@ -7,21 +7,60 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchContent') {
     fetch(request.url)
       .then(response => response.text())
-      .then(text => {
-        sendResponse({ html: text });
+      .then(html => {
+        if (html.includes("Please enable JS and disable any ad blocker")) {
+          // Fallback to injecting script if direct fetch fails
+          chrome.scripting.executeScript(
+            {
+              target: { tabId: sender.tab.id },
+              func: (url) => {
+                return new Promise((resolve, reject) => {
+                  const fetchContent = () => {
+                    fetch(url)
+                      .then(response => response.text())
+                      .then(html => {
+                        resolve(html);
+                      })
+                      .catch(error => {
+                        reject('Error fetching article content: ' + error.message);
+                      });
+                  };
+
+                  const checkReadyState = () => {
+                    if (document.readyState === 'complete') {
+                      fetchContent();
+                    } else {
+                      setTimeout(checkReadyState, 100);
+                    }
+                  };
+                  checkReadyState();
+                });
+              },
+              args: [request.url],
+            },
+            (results) => {
+              if (results && results[0] && results[0].result) {
+                sendResponse({ html: results[0].result });
+              } else {
+                sendResponse({ error: 'Error fetching article content' });
+              }
+            }
+          );
+        } else {
+          sendResponse({ html: html });
+        }
       })
       .catch(error => {
-        sendResponse({ error: error.message });
+        sendResponse({ error: 'Error fetching article content: ' + error.message });
       });
     return true; // Will respond asynchronously
   } else if (request.action === 'AIcall') {
-
     const apiKey = request.apiKey;
-    const systemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer.`;
+    const systemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
     const baseURL = "https://api.groq.com/openai/v1/chat/completions";
 
     let prompt = request.prompt;
-
+    console.log(prompt);
     const body = JSON.stringify({
       model: "gemma2-9b-it",
       messages: [

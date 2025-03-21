@@ -2,19 +2,17 @@
   "manifest_version": 3,
   "name": "Just News",
   "version": "1.0",
-  "description": "Replaces clickbate headlines with informative summaries",
+  "description": "Replaces clickbait headlines with informative summaries",
   "permissions": ["activeTab", "scripting", "webRequest", "storage"],
-  "host_permissions": ["https://api.aimlapi.com/v1/chat/completions", "https://api.aimlapi.com/*"],
+  "host_permissions": ["https://api.groq.com/openai/v1/chat/completions"],
   "action": {
-    "default_icon": {
-      "16": "icon16.png",
-      "32": "icon32.png"
-    },
-    "default_title": "Summarize Headlines"
+    "default_title": "Summarize Headlines, Remove clickbait"
   },
   "icons": {
-    "16": "icon16.png",
-    "32": "icon32.png"
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   },
   "background": {
     "service_worker": "background.js"

@@ -1,4 +1,3 @@
-
 let isInitialized = false;
 let counter = 0;
 
@@ -23,7 +22,7 @@ async function summarizeHeadlines() {
   try {
     apiKey = await getApiKey();
     if (!apiKey) {
-      await promptForApiKey('Please enter your API key');
+      await promptForApiKey('Enter API key (one-time setup)');
       return;
     }
   } catch (error) {
@@ -36,6 +35,9 @@ async function summarizeHeadlines() {
   
   // Filter out headlines with images
   headlines = headlines.filter(headline => !headline.querySelector('img'));
+
+  //filter out processed headlines
+  headlines = headlines.filter(headline => !headline.textContent.includes('~'));
 
   // Filter out headlines that are not in the user's screen frame
   const viewportHeight = window.innerHeight;
@@ -154,8 +156,8 @@ async function summarizeContnet(sourceHeadline, content, apiKey) {
   const prompt = `Rewrite the headline with these rules:
 
 Robotic, factual, no clickbait.
-Keep the original language and length.
-If the title is a question, answer it.
+Summarizing the key point of the article.
+Keep the original language (if it hebrew give new hebrew title) and length.
 Original: ${sourceHeadline}
 Article: ${content}
 
@@ -172,7 +174,6 @@ async function getApiKey() {
   return result.apiKey;
 }
 
-
 function createApiKeyPrompt(message, currentKey = '') {
   const overlay = document.createElement('div');
   overlay.style.cssText = `
@@ -186,6 +187,7 @@ function createApiKeyPrompt(message, currentKey = '') {
     justify-content: center;
     align-items: center;
     z-index: 10000;
+    font-family: Roboto, sans-serif;
   `;
 
   const promptBox = document.createElement('div');
@@ -195,32 +197,44 @@ function createApiKeyPrompt(message, currentKey = '') {
     border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     width: 300px;
+    box-sizing: border-box;
   `;
 
   const title = document.createElement('h3');
   title.textContent = message;
-  title.style.marginBottom = '15px';
+  title.style.cssText = `
+    text-align: left;
+    font-size: 16px;
+    color: black;
+    font-weight: bold;
+    margin-bottom: 15px;
+  `;
 
   const linkToGenerateKey = document.createElement('a');
-  linkToGenerateKey.textContent = 'Generate an API key';
+  linkToGenerateKey.textContent = 'Generate key here';
   linkToGenerateKey.href = 'https://console.groq.com/keys';
   linkToGenerateKey.target = '_blank';
   linkToGenerateKey.style.cssText = `
-    display: block;
     margin-bottom: 15px;
     color: #4285F4;
+    text-decoration: underline;
+    text-align: left;
+    font-size: 12px;
+    display: block;
   `;
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentKey;
-  input.placeholder = 'Enter your API key';
+  input.placeholder = 'Enter your key';
   input.style.cssText = `
     width: 100%;
     padding: 8px;
     margin-bottom: 15px;
     border: 1px solid #ccc;
     border-radius: 4px;
+    box-sizing: border-box;
+    text-align: left;
   `;
 
   const submitButton = document.createElement('button');
@@ -238,15 +252,15 @@ function createApiKeyPrompt(message, currentKey = '') {
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'Cancel';
   cancelButton.style.cssText = `
-    background: #gray;
+    background: gray;
     border: 1px solid #ccc;
     padding: 8px 16px;
     border-radius: 4px;
     cursor: pointer;
   `;
 
-  promptBox.appendChild(linkToGenerateKey);
   promptBox.appendChild(title);
+  promptBox.appendChild(linkToGenerateKey);
   promptBox.appendChild(input);
   promptBox.appendChild(submitButton);
   promptBox.appendChild(cancelButton);
@@ -268,6 +282,7 @@ function createNotificationPrompt(message) {
     justify-content: center;
     align-items: center;
     z-index: 10000;
+    font-family: Roboto, sans-serif;
   `;
 
   const promptBox = document.createElement('div');
@@ -277,21 +292,28 @@ function createNotificationPrompt(message) {
     border-radius: 8px;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
     width: 300px;
+    box-sizing: border-box;
   `;
 
   const title = document.createElement('h3');
   title.textContent = message;
-  title.style.marginBottom = '15px';
+  title.style.cssText = `
+    text-align: center;
+    color: black;
+    margin-bottom: 15px;
+  `;
 
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'OK';
   cancelButton.style.cssText = `
-    background: #gray;
+    background: gray;
     border: 1px solid #ccc;
     padding: 8px 16px;
     border-radius: 4px;
     cursor: pointer;
-    align-self: flex-center;
+    align-self: center;
+    display: block;
+    margin: 0 auto;
   `;
 
   promptBox.appendChild(title);
@@ -300,7 +322,6 @@ function createNotificationPrompt(message) {
 
   return { overlay, cancelButton };
 }
-
 
 async function promptForApiKey(message, currentKey = '') {
   return new Promise((resolve, reject) => {
