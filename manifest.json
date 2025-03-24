@@ -3,7 +3,7 @@
   "name": "Just News",
   "version": "1.0",
   "description": "Replaces clickbait headlines with informative summaries",
-  "permissions": ["activeTab", "scripting", "webRequest", "storage"],
+  "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://api.groq.com/openai/v1/chat/completions"],
   "action": {
     "default_title": "Summarize Headlines, Remove clickbait"
