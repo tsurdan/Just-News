@@ -1,4 +1,3 @@
-// TODO: add more news websites urls
 // TODO: make order in open-source contribution
 // TODO: write a README file
 // TODO: new chrome web store demo images
