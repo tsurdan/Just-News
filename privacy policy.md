@@ -18,8 +18,6 @@ The extension requests the following permissions:
 - `activeTab`: To interact with the currently active tab and access its content.
 - `scripting`: To inject scripts into web pages.
 - `storage`: To store the API key locally.
-- `webRequest`: To send Requests to the Groq API.
-- `host_permissions`: To access the Groq API endpoint.
 
 These permissions are necessary for the extension to function correctly and provide the intended features.
 
