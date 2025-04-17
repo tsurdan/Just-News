@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Just News",
-  "version": "1.0",
+  "version": "1.1.0",
   "description": "Replaces clickbait headlines with informative summaries",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": ["https://api.groq.com/openai/v1/chat/completions"],
