@@ -1,8 +1,3 @@
-// TODO: make order in open-source contribution
-// TODO: write a README file
-// TODO: new chrome web store demo images
-// TODO: new chrome web store demo video
-// TODO: new logo
 
 let isInitialized = false;
 let counter = 0;
@@ -37,7 +32,7 @@ async function summarizeHeadlines() {
   const limit = 20;
 
   // This function will be injected into the page
-  let headlines = Array.from(document.querySelectorAll('a, a span, h1, h2, h3, h4, h5, h6, span[class*="title"], strong[data-type*="title"], span[class*="headline"], strong[data-type*="headline"], span[data-type*="title"], strong[class*="title"], span[data-type*="headline"], strong[class*="headline"], span[class*="Title"], strong[data-type*="Title"], span[class*="Headline"], strong[data-type*="Headline"], span[data-type*="Title"], strong[class*="Title"], span[data-type*="Headline"], strong[class*="Headline"]'));
+  let headlines = Array.from(document.querySelectorAll('a, a span, h1, h2, h3, h4, h5, h6, span[class*="title"], span[class*="title"], strong[data-type*="title"], span[class*="headline"], strong[data-type*="headline"], span[data-type*="title"], strong[class*="title"], span[data-type*="headline"], strong[class*="headline"], span[class*="Title"], strong[data-type*="Title"], span[class*="Headline"], strong[data-type*="Headline"], span[data-type*="Title"], strong[class*="Title"], span[data-type*="Headline"], strong[class*="Headline"]'));
   
   // Filter out headlines with images
   headlines = headlines.filter(headline => !headline.querySelector('img'));
@@ -77,7 +72,7 @@ async function summarizeHeadlines() {
       promises.push(
         fetchSummary(sourceHeadline, articleUrl, apiKey).then(summary => {
           const sanitizedSummary = summary.replace(/[\r\n]+/g, ' ').trim();
-          headline.textContent = `~` + sanitizedSummary;
+          typeHeadline(headline, `~${sanitizedSummary}`);
           counter++;
         })
         .catch(error => {
@@ -94,6 +89,20 @@ async function summarizeHeadlines() {
     const uniqueErrors = [...new Set(errors.map(e => e.reason.message))];
     await createNotification(`Error summarizing some articles: ` + uniqueErrors.join(', '));
   }
+}
+
+// Function to type the headline letter by letter
+function typeHeadline(element, text) {
+  let index = 0;
+  element.textContent = '';
+  const interval = setInterval(() => {
+    if (index < text.length) {
+      element.textContent += text[index];
+      index++;
+    } else {
+      clearInterval(interval);
+    }
+  }, 50); // Adjust typing speed by changing the interval time
 }
 
 async function fetchSummary(sourceHeadline, url, apiKey) {

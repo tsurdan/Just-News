@@ -19,7 +19,7 @@
 2. Enter to your favorite news website
 3. Click on the Just-News extention icon
 4. Follow the guide in the extension popup to generate and add your **Groq API key**.
-5. Done. No more clickbate headlines.
+5. Done. No more clickbait headlines.
 
 ---
 
@@ -58,6 +58,7 @@ For more details check the `privacy policy.md` file
 ## 🤝 Contributing
 
 Want to improve or extend the extension? Contributions are welcome!
+You can find bugs or feature suggestions in the repo issues
 
 1. Fork this repository
 2. Create a new branch: `git checkout -b feature/my-feature`
