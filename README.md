@@ -15,7 +15,7 @@
 
 ## 🔑 Setup Instructions
 
-1. Download the extention from [chrome web store|https://chromewebstore.google.com/detail/just-news/bjeicinigicmeicfnibabdfanajpigln]
+1. Download the extention from [chrome web store|(https://chromewebstore.google.com/detail/just-news/bjeicinigicmeicfnibabdfanajpigln)]
 2. Enter to your favorite news website
 3. Click on the Just-News extention icon
 4. Follow the guide in the extension popup to generate and add your **Groq API key**.
@@ -28,7 +28,6 @@
 - Clean, informative, non-clickbait headlines
 - Multi-language support
 - Lightweight and fast
-- 100% local processing (except API call for headline generation)
 
 ---
 
@@ -40,8 +39,9 @@ Just News is designed with privacy in mind:
 - No ads
 - No personal data collection
 - Article content is sent only to Groq's API for headline rewriting
+- Your API key is stored **only in your browser's local storage**
 
-Your API key is stored **only in your browser's local storage** and is never shared.
+For more details read the [Privacy Policy|(privacy policy.md)]
 
 ---
 
