@@ -41,11 +41,11 @@ Just News is designed with privacy in mind:
 - Article content is sent only to Groq's API for headline rewriting
 - Your API key is stored **only in your browser's local storage**
 
-For more details read the [Privacy Policy](privacy policy.md)
+For more details check the `privacy policy.md` file
 
 ---
 
-## 💻 Developing Setup Instructions
+## 💻 Dev Setup Instructions
 
 1. Clone this repository.
 2. Load it as an unpacked extension in Chrome:
