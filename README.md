@@ -1,3 +1,5 @@
+[![Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/tsurdan)
+
 # Just News
 
 **Just News** is a Chrome extension that automatically replaces misleading or clickbait news headlines with clear, factual, and objective alternatives. It enhances your browsing experience by letting you know the essence of an article—without needing to click.
