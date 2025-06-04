@@ -51,7 +51,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
       })
       .catch(error => {
-        sendResponse({ error: 'Error fetching article content: ' + error.message });
+        sendResponse({ error: error.message });
       });
     return true; // Will respond asynchronously
   } else if (request.action === 'AIcall') {
@@ -91,7 +91,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     .then(response => { 
       if (!response.ok) {
         if (response.status === 429) {
-        throw new Error('Rate limit. Try again in a minute');
+        throw new Error(`Rate limit. Try again in ${(response.headers.get('retry-after') || 'a few') + ' seconds'}`);
       }
       if (response.status === 401) {
         throw new Error('Invalid API key');

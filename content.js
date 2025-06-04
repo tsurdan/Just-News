@@ -1,4 +1,3 @@
-
 let isInitialized = false;
 let counter = 0;
 
@@ -63,21 +62,27 @@ async function summarizeHeadlines() {
   });
 
   // Process only the top <limit> headlines
+  let rateLimitHit = false;
   let promises = [];
   for (let i = counter; i < Math.min(limit + counter, headlines.length); i++) {
+    if (rateLimitHit) break;
     const headline = headlines[i];
     const sourceHeadline = headline.textContent;
     const articleUrl = headline.href || headline.closest('a')?.href;
     if (articleUrl) {
       promises.push(
-        fetchSummary(sourceHeadline, articleUrl, apiKey).then(summary => {
-          const sanitizedSummary = summary.replace(/[\r\n]+/g, ' ').trim();
-          typeHeadline(headline, `~${sanitizedSummary}`);
-          counter++;
-        })
-        .catch(error => {
-          throw new Error(error.message);
-        })
+        fetchSummary(sourceHeadline, articleUrl, apiKey)
+          .then(summary => {
+            const sanitizedSummary = summary.replace(/[\r\n]+/g, ' ').trim();
+            typeHeadline(headline, `~${sanitizedSummary}`);
+            counter++;
+          })
+          .catch(error => {
+            if (error.message && error.message.includes('Rate limit')) {
+              rateLimitHit = true;
+            }
+            throw new Error(error.message);
+          })
       );
     }
   }
@@ -86,8 +91,39 @@ async function summarizeHeadlines() {
   const succes = results.filter(result => result.status === 'fulfilled');  
   const errors = results.filter(result => result.status === 'rejected');
   if (succes.length === 0 && errors.length > 0) {
-    const uniqueErrors = [...new Set(errors.map(e => e.reason.message))];
-    await createNotification(`Error summarizing some articles: ` + uniqueErrors.join(', '));
+    let minRetryAfter = null;
+    let hasRateLimit = false;
+    errors.forEach(e => {
+      let msg = e.reason.message || '';
+      if (msg.includes('Rate limit')) {
+        hasRateLimit = true;
+        const match = msg.match(/Try again in (\d+)/);
+        if (match) {
+          const retry = parseInt(match[1], 10);
+          if (minRetryAfter === null || retry < minRetryAfter) minRetryAfter = retry;
+        }
+      }
+    });
+    if (hasRateLimit) {
+      let summary = minRetryAfter !== null
+        ? `Rate limit. Try again in ${minRetryAfter} seconds`
+        : 'Rate limit. Try again later';
+      await createNotification(summary);
+    } else {
+      let errorTypes = new Set();
+      errors.forEach(e => {
+        let msg = e.reason.message || '';
+        if (msg.includes('Error extracting article content')) {
+          errorTypes.add('Error extracting article content');
+        } else if (msg.includes('Invalid API key')) {
+          errorTypes.add('Invalid API key');
+        } else {
+          errorTypes.add(msg.split(',')[0]);
+        }
+      });
+      let summary = Array.from(errorTypes).join(', ');
+      await createNotification(summary);
+    }
   }
 }
 
