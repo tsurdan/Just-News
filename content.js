@@ -213,7 +213,9 @@ Original: ${sourceHeadline}
 Article: ${content}
 
 Return only the new headline.`;
-  const response = await chrome.runtime.sendMessage({ action: 'AIcall', sourceHeadline: sourceHeadline, prompt: prompt, apiKey: apiKey });
+  const models = ['gemma2-9b-it', 'llama-guard-3-8b', 'meta-llama/llama-guard-4-12b', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct', 'mistral-saba-24b']
+
+  const response = await chrome.runtime.sendMessage({ action: 'AIcall', sourceHeadline: sourceHeadline, prompt: prompt, apiKey: apiKey, model: models[0] });
   if (!response || response?.error ||  !response.summary) {
     throw new Error('Error fetching AI summary ' + response?.error);
   }

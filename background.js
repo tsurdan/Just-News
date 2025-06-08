@@ -56,13 +56,14 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Will respond asynchronously
   } else if (request.action === 'AIcall') {
     const apiKey = request.apiKey;
+    const model = request.model;
     const systemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
     const baseURL = "https://api.groq.com/openai/v1/chat/completions";
 
     let prompt = request.prompt;
     console.log(prompt);
     const body = JSON.stringify({
-      model: "gemma2-9b-it",
+      model: model,
       messages: [
         {
           role: "system",
