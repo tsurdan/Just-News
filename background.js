@@ -1,4 +1,7 @@
 chrome.action.onClicked.addListener((tab) => {
+  // Show loading badge
+  chrome.action.setBadgeText({ tabId: tab.id, text: '...' });
+  chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
 
@@ -113,6 +116,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ error: error.message });
     });
     return true; // Will respond asynchronously
+  } else if (request.action === 'headlineChanged') {
+    // Remove loading badge when first headline changes
+    chrome.action.setBadgeText({ tabId: sender.tab.id, text: '' });
+    sendResponse({ status: 'badge cleared' });
+    return;
   }
 });
 

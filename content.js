@@ -29,6 +29,7 @@ async function summarizeHeadlines() {
     await createNotification('Error checking API key. Please try again.');
   }
   const limit = 20;
+  let firstHeadlineChanged = false;
 
   // This function will be injected into the page
   let headlines = Array.from(document.querySelectorAll('a, a span, h1, h2, h3, h4, h5, h6, span[class*="title"], span[class*="title"], strong[data-type*="title"], span[class*="headline"], strong[data-type*="headline"], span[data-type*="title"], strong[class*="title"], span[data-type*="headline"], strong[class*="headline"], span[class*="Title"], strong[data-type*="Title"], span[class*="Headline"], strong[data-type*="Headline"], span[data-type*="Title"], strong[class*="Title"], span[data-type*="Headline"], strong[class*="Headline"]'));
@@ -76,6 +77,11 @@ async function summarizeHeadlines() {
             const sanitizedSummary = summary.replace(/[\r\n]+/g, ' ').trim();
             typeHeadline(headline, `~${sanitizedSummary}`);
             counter++;
+            // Notify background to clear badge after first headline changes
+            if (!firstHeadlineChanged) {
+              firstHeadlineChanged = true;
+              chrome.runtime.sendMessage({ action: 'headlineChanged' });
+            }
           })
           .catch(error => {
             if (error.message && error.message.includes('Rate limit')) {
@@ -206,13 +212,14 @@ async function fetchContent(url) {
 async function summarizeContnet(sourceHeadline, content, apiKey) {
   const prompt = `Rewrite the headline with these rules:
 
-Robotic, factual, no clickbait.
-Summarizing the key point of the article.
-Keep the original language (if it hebrew give new hebrew title) and length.
-Original: ${sourceHeadline}
-Article: ${content}
+                  Robotic, factual, no clickbait.
+                  Summarizing the key point of the article.
+                  Keep the original language (if it hebrew give new hebrew title) and length.
+                  Original: ${sourceHeadline}
+                  Article: ${content}
 
-Return only the new headline.`;
+                  Return only the new headline.`;
+
   const models = ['gemma2-9b-it', 'llama-guard-3-8b', 'meta-llama/llama-guard-4-12b', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct', 'mistral-saba-24b']
 
   const response = await chrome.runtime.sendMessage({ action: 'AIcall', sourceHeadline: sourceHeadline, prompt: prompt, apiKey: apiKey, model: models[0] });
