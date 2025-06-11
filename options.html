@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Just News - Options</title>
+  <style>
+    body {
+      font-family: Roboto, Arial, sans-serif;
+      background: rgba(0,0,0,0.08);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #options-container {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 4px 32px rgba(0,0,0,0.18);
+      padding: 32px 28px 24px 28px;
+      min-width: 340px;
+      max-width: 95vw;
+      margin: 32px 0;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+    h2 {
+      margin-top: 0;
+      margin-bottom: 18px;
+      font-size: 1.4em;
+      color: #222;
+      text-align: center;
+      font-weight: bold;
+    }
+    label {
+      font-size: 1em;
+      color: #222;
+      margin-top: 14px;
+      margin-bottom: 4px;
+      font-weight: 500;
+      display: block;
+    }
+    input[type="text"], select, textarea {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      font-size: 1em;
+      margin-bottom: 0;
+      box-sizing: border-box;
+      background: #fafbfc;
+      margin-top: 2px;
+    }
+    textarea {
+      min-height: 60px;
+      resize: vertical;
+    }
+    .btn-row {
+      display: flex;
+      justify-content: flex-end;
+      align-items: center;
+      margin-top: 18px;
+    }
+    button {
+      background: #4285F4;
+      color: #fff;
+      border: none;
+      padding: 8px 22px;
+      border-radius: 4px;
+      font-size: 1em;
+      cursor: pointer;
+      font-weight: 500;
+      margin-left: 8px;
+      transition: background 0.2s;
+    }
+    button#cancelBtn {
+      background: #bbb;
+      color: #222;
+    }
+    button:active {
+      background: #3367d6;
+    }
+    #status {
+      color: #1a7f37;
+      margin-left: 18px;
+      font-size: 1em;
+      font-weight: 500;
+      min-width: 60px;
+      text-align: left;
+    }
+    @media (max-width: 500px) {
+      #options-container { padding: 12px 4vw 12px 4vw; min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+  <div id="options-container">
+    <h2>Just News Settings</h2>
+    <label for="apiProvider">API Provider:</label>
+    <select id="apiProvider">
+      <option value="groq">Groq</option>
+      <option value="openai">OpenAI</option>
+      <option value="claude">Claude</option>
+      <option value="gemini">Gemini</option>
+      <option value="grok">Grok</option>
+      <option value="deepseek">DeepSeek</option>
+    </select>
+    <label for="apiKey">API Key:</label>
+    <input type="text" id="apiKey" placeholder="Enter your API key" autocomplete="off">
+    <label for="model">AI Model:</label>
+    <select id="model">
+      <option value="gemma2-9b-it">Groq: gemma2-9b-it</option>
+      <option value="llama-guard-3-8b">Groq: llama-guard-3-8b</option>
+      <option value="meta-llama/llama-guard-4-12b">Groq: llama-guard-4-12b</option>
+      <option value="llama-3.3-70b-versatile">Groq: llama-3.3-70b-versatile</option>
+      <option value="meta-llama/llama-4-scout-17b-16e-instruct">Groq: llama-4-scout-17b</option>
+      <option value="mistral-saba-24b">Groq: mistral-saba-24b</option>
+      <option value="gpt-3.5-turbo">OpenAI: gpt-3.5-turbo</option>
+      <option value="gpt-4-turbo">OpenAI: gpt-4-turbo</option>
+      <option value="claude-3-opus-20240229">Claude: claude-3-opus</option>
+      <option value="gemini-pro">Gemini: gemini-pro</option>
+      <option value="gemini-1.5-pro-latest">Gemini: gemini-1.5-pro-latest</option>
+      <option value="grok-1">Grok: grok-1</option>
+      <option value="deepseek-chat">DeepSeek: deepseek-chat</option>
+      <option value="deepseek-coder">DeepSeek: deepseek-coder</option>
+    </select>
+    <label for="systemPrompt">System Prompt:</label>
+    <textarea id="systemPrompt" rows="2" placeholder="Customize the system prompt for the AI (optional)"></textarea>
+    <label for="customPrompt">Prompt:</label>
+    <textarea id="customPrompt" rows="3" placeholder="Enter your custom prompt here."></textarea>
+    <div class="btn-row">
+      <button id="saveBtn">Save</button>
+      <button id="cancelBtn" type="button">Cancel</button>
+      <span id="status"></span>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>

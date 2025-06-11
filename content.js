@@ -19,8 +19,24 @@ function initializeContentScript() {
 
 async function summarizeHeadlines() {
   let apiKey = "";
+  let apiProvider = "groq";
+  let model = "gemma2-9b-it";
+  let customPrompt = "";
+  let systemPrompt = "";
+  const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
+  const defaultPrompt = `Rewrite the headline with these rules:
+
+Robotic, factual, no clickbait.
+Summarizing the key point of the article.
+Keep the original language (if it hebrew give new hebrew title) and length.`;
+
   try {
-    apiKey = await getApiKey();
+    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt']);
+    apiKey = settings.apiKey || "";
+    apiProvider = settings.apiProvider || "groq";
+    model = settings.model || "gemma2-9b-it";
+    customPrompt = settings.customPrompt || defaultPrompt;
+    systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     if (!apiKey) {
       await promptForApiKey('Enter API key (one-time setup)');
       return;
@@ -28,6 +44,7 @@ async function summarizeHeadlines() {
   } catch (error) {
     await createNotification('Error checking API key. Please try again.');
   }
+  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt}; 
   const limit = 20;
   let firstHeadlineChanged = false;
 
@@ -72,7 +89,7 @@ async function summarizeHeadlines() {
     const articleUrl = headline.href || headline.closest('a')?.href;
     if (articleUrl) {
       promises.push(
-        fetchSummary(sourceHeadline, articleUrl, apiKey)
+        fetchSummary(sourceHeadline, articleUrl, apiOptions)
           .then(summary => {
             const sanitizedSummary = summary.replace(/[\r\n]+/g, ' ').trim();
             typeHeadline(headline, `~${sanitizedSummary}`);
@@ -147,11 +164,16 @@ function typeHeadline(element, text) {
   }, 50); // Adjust typing speed by changing the interval time
 }
 
-async function fetchSummary(sourceHeadline, url, apiKey) {
+async function fetchSummary(sourceHeadline, url, options) {
   let summary = "";
   try {
     const content = await fetchContent(url);
-    summary = await summarizeContnet(sourceHeadline, content, apiKey);
+    // Ensure model, customPrompt, systemPrompt, apiProvider are in scope
+    summary = await summarizeContnet(
+      sourceHeadline,
+      content,
+      options
+    );
   } catch (error) {
     throw new Error(error.message);
   }
@@ -209,21 +231,24 @@ async function fetchContent(url) {
   return content;
 }
 
-async function summarizeContnet(sourceHeadline, content, apiKey) {
-  const prompt = `Rewrite the headline with these rules:
+async function summarizeContnet(sourceHeadline, content, options) {
+  const { apiKey, apiProvider, model, customPrompt, systemPrompt } = options;
+  const defaultEndOfPrompt = 
+  `Original: ${sourceHeadline}
+   Article: ${content}
 
-                  Robotic, factual, no clickbait.
-                  Summarizing the key point of the article.
-                  Keep the original language (if it hebrew give new hebrew title) and length.
-                  Original: ${sourceHeadline}
-                  Article: ${content}
-
-                  Return only the new headline.`;
-
-  const models = ['gemma2-9b-it', 'llama-guard-3-8b', 'meta-llama/llama-guard-4-12b', 'llama-3.3-70b-versatile', 'meta-llama/llama-4-scout-17b-16e-instruct', 'mistral-saba-24b']
-
-  const response = await chrome.runtime.sendMessage({ action: 'AIcall', sourceHeadline: sourceHeadline, prompt: prompt, apiKey: apiKey, model: models[0] });
-  if (!response || response?.error ||  !response.summary) {
+   Return only the new headline.`;
+  const prompt = customPrompt + defaultEndOfPrompt;
+  const response = await chrome.runtime.sendMessage({
+    action: 'AIcall',
+    sourceHeadline,
+    prompt,
+    apiKey,
+    model,
+    systemPrompt,
+    apiProvider // <-- pass provider
+  });
+  if (!response || response?.error || !response.summary) {
     throw new Error('Error fetching AI summary ' + response?.error);
   }
   return response.summary;
@@ -418,5 +443,6 @@ async function createNotification(message) {
     };
   });
 }
+
 
 initializeContentScript();

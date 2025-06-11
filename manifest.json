@@ -25,5 +25,9 @@
         "https://*.bild.de/*", "https://*.spiegel.de/*", "https://*.faz.net/*", "https://*.handelsblatt.com/*", "https://*.sueddeutsche.de/*", "https://*.taz.de/*", "https://*.welt.de/*", "https://*.focus.de/*", "https://*.stern.de/*", "https://*.n-tv.de/*", "https://*.tagesschau.de/*", "https://*.deutschlandfunk.de/*", "https://*.heise.de/*", "https://*.golem.de/*"],
       "js": ["content.js"]
     }
-  ]
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
 }
