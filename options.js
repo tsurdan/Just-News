@@ -65,12 +65,10 @@ Keep the original language (if it hebrew give new hebrew title) and length.`;
   function updateModelOptions() {
     const provider = apiProvider.value;
     Array.from(model.options).forEach(opt => {
-      if (provider === 'groq' && (opt.value.startsWith('gpt-') || opt.value.startsWith('claude-') || opt.value.startsWith('gemini-') || opt.value.startsWith('grok-') || opt.value.startsWith('deepseek-'))) opt.style.display = 'none';
+      if (provider === 'groq' && (opt.value.startsWith('gpt-') || opt.value.startsWith('claude-') || opt.value.startsWith('gemini-') )) opt.style.display = 'none';
       else if (provider === 'openai' && !opt.value.startsWith('gpt-')) opt.style.display = 'none';
       else if (provider === 'claude' && !opt.value.startsWith('claude-')) opt.style.display = 'none';
       else if (provider === 'gemini' && !opt.value.startsWith('gemini-')) opt.style.display = 'none';
-      else if (provider === 'grok' && !opt.value.startsWith('grok-')) opt.style.display = 'none';
-      else if (provider === 'deepseek' && !opt.value.startsWith('deepseek-')) opt.style.display = 'none';
       else opt.style.display = '';
     });
     // Select first visible option

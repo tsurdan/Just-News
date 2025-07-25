@@ -61,7 +61,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     const apiKey = request.apiKey;
     const model = request.model;
     const apiProvider = request.apiProvider || "groq";
-    // Use custom systemPrompt if provided, else fallback to default
     const systemPrompt = request.systemPrompt && request.systemPrompt.trim().length > 0
       ? request.systemPrompt
       : `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
@@ -75,11 +74,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     } else if (apiProvider === "claude") {
       baseURL = "https://api.anthropic.com/v1/messages";
     } else if (apiProvider === "gemini") {
-      baseURL = "https://generativelanguage.googleapis.com/v1beta/models/" + model + ":generateContent";
-    } else if (apiProvider === "grok") {
-      baseURL = "https://api.grok.com/v1/chat/completions";
-    } else if (apiProvider === "deepseek") {
-      baseURL = "https://api.deepseek.com/v1/chat/completions";
+      // Gemini API key is in the URL as ?key=API_KEY
+      baseURL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     } else {
       baseURL = "https://api.groq.com/openai/v1/chat/completions";
     }
@@ -87,7 +83,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     let prompt = request.prompt;
     console.log(prompt);
 
-    // Prepare body and headers for each provider
     let body, headers;
     if (apiProvider === "claude") {
       body = JSON.stringify({
@@ -109,10 +104,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       headers = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
+        "x-goog-api-key": apiKey
+        // No Authorization header for Gemini, key is in URL
       };
     } else {
-      // OpenAI, Groq, DeepSeek, Grok (OpenAI compatible)
+      // OpenAI, Groq (OpenAI compatible)
       body = JSON.stringify({
         model: model,
         messages: [
