@@ -4,10 +4,10 @@
 Just News Chrome Extension does not collect any personal data. Since no personal data is collected, none of your data can be sold to third parties.
 
 ## Chrome Storage API
-The extension uses Google Chrome's Storage API to locally store your API key (for accessing the Groq API for Gemma LLM). This key is stored locally on your device and is used to authenticate requests to the Groq API when you click on the extension. This local storage is similar to a cookie.
+The extension uses Google Chrome's Storage API to locally store your API key (for accessing the selected LLM API (defaultly groq api)). This key is stored locally on your device and is used to authenticate requests to the LLM API when you click on the extension. This local storage is similar to a cookie.
 
 ## Third-Party API
-As mentioned, the extension interacts with a third-party API (Groq API) to generate informative headlines. When you click on the extension, it identifies headlines on a news website, extracts the content of the articles, and sends this content to the Groq API to generate new headlines. The data sent to the API includes:
+As mentioned, the extension interacts with a third-party API to generate informative headlines. The default LLM api is groq api, that hosting google gemma model, but if selected it can make the requests to gemini, chatgpt or claude. When you click on the extension, it identifies headlines on a news website, extracts the content of the articles, and sends this content to the slected LLM API to generate new headlines. The data sent to the API includes:
 - The original headline
 - The content of the article
 

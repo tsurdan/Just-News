@@ -57,6 +57,17 @@ Keep the original language (if it hebrew give new hebrew title) and length.`;
   //filter out processed headlines
   headlines = headlines.filter(headline => !headline.textContent.includes('~'));
 
+  //filter out duplicated headlines
+  const uniqueHeadlines = new Set();
+  headlines = headlines.filter(headline => {
+    const text = headline.textContent.trim();
+    if (uniqueHeadlines.has(text)) {
+      return false;
+    }
+    uniqueHeadlines.add(text);
+    return true;
+  });
+
   // Filter out headlines that are not in the user's screen frame
   const viewportHeight = window.innerHeight;
   const viewportTop = window.scrollY // Maybe Add extra space to the frame?
