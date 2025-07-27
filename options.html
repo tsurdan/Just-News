@@ -5,93 +5,277 @@
   <title>Just News - Options</title>
   <style>
     body {
-      font-family: Roboto, Arial, sans-serif;
-      background: rgba(0,0,0,0.08);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #4285F4;
       margin: 0;
-      padding: 0;
+      padding: 10px;
       min-height: 100vh;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     #options-container {
-      background: #fff;
-      border-radius: 10px;
-      box-shadow: 0 4px 32px rgba(0,0,0,0.18);
-      padding: 32px 28px 24px 28px;
-      min-width: 340px;
-      max-width: 95vw;
-      margin: 32px 0;
-      display: flex;
-      flex-direction: column;
-      align-items: stretch;
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(66, 133, 244, 0.3);
+      padding: 32px;
+      min-width: 450px;
+      max-width: 600px;
+      width: 80vw;
+      max-height: 95vh;
+      overflow-y: auto;
     }
     h2 {
-      margin-top: 0;
-      margin-bottom: 18px;
-      font-size: 1.4em;
-      color: #222;
+      margin: 0 0 16px 0;
+      font-size: 1.6em;
+      color: #4285F4;
       text-align: center;
-      font-weight: bold;
+      font-weight: 600;
+      letter-spacing: -0.3px;
     }
     label {
       font-size: 1em;
-      color: #222;
-      margin-top: 14px;
-      margin-bottom: 4px;
-      font-weight: 500;
+      color: #4285F4;
+      margin: 16px 0 6px 0;
+      font-weight: 600;
       display: block;
     }
     input[type="text"], select, textarea {
       width: 100%;
-      padding: 8px 10px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
+      padding: 12px 14px;
+      border: 1px solid #4285F4;
+      border-radius: 6px;
       font-size: 1em;
-      margin-bottom: 0;
+      margin-bottom: 6px;
       box-sizing: border-box;
-      background: #fafbfc;
-      margin-top: 2px;
+      background: #ffffff;
+      transition: all 0.3s ease;
+      font-family: inherit;
+    }
+    
+    /* API Provider styling */
+    .api-provider-container {
+      position: relative;
+    }
+    .custom-select {
+      position: relative;
+      width: 100%;
+    }
+    .select-selected {
+      background-color: #ffffff;
+      border: 1px solid #4285F4;
+      border-radius: 6px;
+      padding: 12px 14px 12px 45px;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      font-size: 1em;
+      font-family: inherit;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .select-selected:hover, .select-selected.select-arrow-active {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+    }
+    .select-selected::after {
+      content: '';
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 5px solid #4285F4;
+      transition: transform 0.3s ease;
+    }
+    .select-selected.select-arrow-active::after {
+      transform: translateY(-50%) rotate(180deg);
+    }
+    .api-provider-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
+      z-index: 1;
+      object-fit: contain;
+    }
+    .select-items {
+      position: absolute;
+      background-color: #ffffff;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 99;
+      border: 1px solid #4285F4;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.2);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .select-hide {
+      display: none;
+    }
+    .select-items div {
+      padding: 12px 14px 12px 45px;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      font-size: 1em;
+      font-family: inherit;
+      position: relative;
+      transition: background-color 0.2s ease;
+    }
+    .select-items div:hover, .same-as-selected {
+      background-color: #f8f9ff;
+    }
+    .select-items div img {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+    }
+    input[type="text"]:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
     }
     textarea {
       min-height: 60px;
       resize: vertical;
+      line-height: 1.3;
     }
     .btn-row {
       display: flex;
       justify-content: flex-end;
       align-items: center;
-      margin-top: 18px;
+      margin-top: 16px;
+      gap: 8px;
     }
     button {
       background: #4285F4;
       color: #fff;
       border: none;
-      padding: 8px 22px;
-      border-radius: 4px;
+      padding: 10px 20px;
+      border-radius: 6px;
       font-size: 1em;
       cursor: pointer;
-      font-weight: 500;
-      margin-left: 8px;
-      transition: background 0.2s;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      font-family: inherit;
+    }
+    button:hover {
+      background: #1a73e8;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);
     }
     button#cancelBtn {
-      background: #bbb;
-      color: #222;
+      background: #6c757d;
+      color: #fff;
     }
-    button:active {
-      background: #3367d6;
+    button#cancelBtn:hover {
+      background: #5a6268;
+      box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
     }
     #status {
-      color: #1a7f37;
-      margin-left: 18px;
-      font-size: 1em;
-      font-weight: 500;
+      color: #4285F4;
+      font-size: 0.95em;
+      font-weight: 600;
       min-width: 60px;
-      text-align: left;
     }
-    @media (max-width: 500px) {
-      #options-container { padding: 12px 4vw 12px 4vw; min-width: 0; }
+    
+    /* Character Mode Styles */
+    #characterModes {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin: 12px 0 16px 0;
+    }
+    .character-mode {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 4px;
+      border: 1px solid #4285F4;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: #ffffff;
+      text-align: center;
+    }
+    .character-mode:hover {
+      border-color: #1a73e8;
+      background: #f8f9ff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.2);
+    }
+    .character-mode.selected {
+      border-color: #4285F4;
+      background: #4285F4;
+      color: white;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(66, 133, 244, 0.4);
+    }
+    .character-icon {
+      width: 36px;
+      height: 36px;
+      margin-bottom: 4px;
+      object-fit: contain;
+      transition: all 0.3s ease;
+    }
+    .character-mode.selected .character-icon {
+      filter: brightness(0) invert(1);
+    }
+    .character-name {
+      font-size: 0.75em;
+      font-weight: 600;
+      color: #4285F4;
+      line-height: 1.1;
+    }
+    .character-mode.selected .character-name {
+      color: #ffffff;
+    }
+    
+    @media (max-width: 600px) {
+      body { padding: 8px; }
+      #options-container { 
+        padding: 16px; 
+        min-width: 0; 
+        width: 95vw; 
+        max-height: 98vh;
+      }
+      h2 { font-size: 1.4em; margin-bottom: 12px; }
+      #characterModes {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+      .character-mode {
+        padding: 10px 6px;
+      }
+      .character-icon {
+        width: 32px;
+        height: 32px;
+      }
+      .character-name {
+        font-size: 0.75em;
+      }
+      label { font-size: 0.9em; margin: 10px 0 3px 0; }
+      input[type="text"], select, textarea, button {
+        font-size: 0.9em;
+        padding: 8px 10px;
+      }
+      textarea { min-height: 40px; }
     }
   </style>
 </head>
@@ -99,28 +283,56 @@
   <div id="options-container">
     <h2>Just News Settings</h2>
     <label for="apiProvider">API Provider:</label>
-    <select id="apiProvider">
-      <option value="groq">Groq</option>
-      <option value="openai">OpenAI</option>
-      <option value="claude">Claude</option>
-      <option value="gemini">Gemini</option>
-    </select>
+    <div class="api-provider-container">
+      <img src="more icons/groq.png" alt="Groq" class="api-provider-icon" id="providerIcon">
+      <div class="custom-select">
+        <div class="select-selected" id="selectSelected">Groq</div>
+        <div class="select-items select-hide" id="selectItems">
+          <div data-value="groq">
+            <img src="more icons/groq.png" alt="Groq">
+            Groq
+          </div>
+          <div data-value="openai">
+            <img src="more icons/openai.png" alt="OpenAI">
+            OpenAI
+          </div>
+          <div data-value="claude">
+            <img src="more icons/claude.png" alt="Claude">
+            Claude
+          </div>
+          <div data-value="gemini">
+            <img src="more icons/gemini.png" alt="Gemini">
+            Gemini
+          </div>
+        </div>
+      </div>
+      <input type="hidden" id="apiProvider" value="groq">
+    </div>
     <label for="apiKey">API Key:</label>
     <input type="text" id="apiKey" placeholder="Enter your API key" autocomplete="off">
-    <label for="model">AI Model:</label>
-    <select id="model">
-      <option value="gemma2-9b-it">Groq: gemma2-9b-it</option>
-      <option value="llama-guard-3-8b">Groq: llama-guard-3-8b</option>
-      <option value="meta-llama/llama-guard-4-12b">Groq: llama-guard-4-12b</option>
-      <option value="llama-3.3-70b-versatile">Groq: llama-3.3-70b-versatile</option>
-      <option value="meta-llama/llama-4-scout-17b-16e-instruct">Groq: llama-4-scout-17b</option>
-      <option value="mistral-saba-24b">Groq: mistral-saba-24b</option>
-      <option value="gpt-3.5-turbo">OpenAI: gpt-3.5-turbo</option>
-      <option value="gpt-4-turbo">OpenAI: gpt-4-turbo</option>
-      <option value="claude-3-opus-20240229">Claude: claude-3-opus</option>
-      <option value="gemini-1.5-pro-latest">Gemini: gemini-1.5-pro-latest</option>
-      <option value="gemini-1.5-flash-latest">Gemini: gemini-1.5-flash-latest</option>
-    </select>
+    <label for="characterMode">Character Mode:</label>
+    <div id="characterModes">
+      <div class="character-mode" data-mode="robot">
+        <img src="more icons/robot.png" alt="Robot" class="character-icon">
+        <span class="character-name">Robot</span>
+      </div>
+      <div class="character-mode" data-mode="kid">
+        <img src="more icons/kid.png" alt="Kid" class="character-icon">
+        <span class="character-name">Kid</span>
+      </div>
+      <div class="character-mode" data-mode="cynic">
+        <img src="more icons/cynic.png" alt="Cynic" class="character-icon">
+        <span class="character-name">Cynic</span>
+      </div>
+      <div class="character-mode" data-mode="optimist">
+        <img src="more icons/optimist.png" alt="Optimist" class="character-icon">
+        <span class="character-name">Optimist</span>
+      </div>
+      <div class="character-mode" data-mode="conspirator">
+        <img src="more icons/conspirator.png" alt="Conspirator" class="character-icon">
+        <span class="character-name">Conspirator</span>
+      </div>
+    </div>
     <label for="systemPrompt">System Prompt:</label>
     <textarea id="systemPrompt" rows="2" placeholder="Customize the system prompt for the AI (optional)"></textarea>
     <label for="customPrompt">Prompt:</label>
