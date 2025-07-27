@@ -27,13 +27,13 @@ document.addEventListener('DOMContentLoaded', () => {
       systemPrompt: "Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.",
       userPrompt: "Rewrite the headline, based on the article, with these rules:\n\nRobotic, factual, no clickbait.\nSummarizing the key point of the article.\nKeep the original headline length and language (if hebrew generate hebrew headline)."
     },
+    custom: {
+      systemPrompt: "",
+      userPrompt: ""
+    },
     cynic: {
       systemPrompt: "You are a cynical, highly intelligent, and sarcastic analyst. You break down headlines with wit and sharp commentary. Your tone is casual, jaded, and often darkly humorous.",
       userPrompt: "Rewrite this headline, based on the article, in your usual sarcastic tone. Expose any nonsense and dont sugarcoat anything. you can use foul language.\n Keep the original headline length and language (if hebrew generate hebrew headline)."
-    },
-    kid: {
-      systemPrompt: "You are a kind, patient kid who explains things in very simple, child-friendly language. You use short sentences, familiar ideas, and comforting tone. Avoid sarcasm, big words, or negative framing.",
-      userPrompt: "Please rewrite this headline, based on the article, so that a 5-year-old could understand what it's about.\n Keep the original headline length and language (if hebrew generate hebrew headline)."
     },
     optimist: {
       systemPrompt: "You are an enthusiastic, optimistic influencer who turns every news headline into an exciting update. Use positive tone, modern slang, exclamation marks, and emojis. Keep it short and hype-y.",
@@ -182,6 +182,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   saveBtn.onclick = () => {
+    // Validate custom mode prompts
+    if (currentCharacterMode === 'custom') {
+      const systemPromptValue = systemPrompt.value.trim();
+      const customPromptValue = customPrompt.value.trim();
+      
+      if (systemPromptValue === '' || customPromptValue === '') {
+        status.textContent = 'Custom mode requires both prompts to be filled!';
+        status.style.color = '#dc3545';
+        setTimeout(() => {
+          status.textContent = '';
+          status.style.color = '#4285F4';
+        }, 3000);
+        return;
+      }
+    }
+    
     // Save the real key if present, otherwise the visible value
     const keyToSave = apiKey.dataset.real || apiKey.value;
     // Get the default model for the selected provider
@@ -196,6 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
       characterMode: currentCharacterMode
     }, () => {
       status.textContent = 'Saved!';
+      status.style.color = '#4285F4';
       setTimeout(() => status.textContent = '', 1500);
     });
   };
