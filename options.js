@@ -8,6 +8,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const resetBtn = document.getElementById('resetBtn');
   const status = document.getElementById('status');
   const characterModes = document.querySelectorAll('.character-mode');
+  
+  // Character counter elements
+  const systemPromptCounter = document.getElementById('systemPromptCounter');
+  const customPromptCounter = document.getElementById('customPromptCounter');
 
   // Custom dropdown elements
   const selectSelected = document.getElementById('selectSelected');
@@ -50,6 +54,29 @@ document.addEventListener('DOMContentLoaded', () => {
   
   // Store for modified prompts
   let modifiedPrompts = {};
+
+  // Character counter functions
+  function updateCharCounter(textarea, counter, maxLength) {
+    const currentLength = textarea.value.length;
+    counter.textContent = `${currentLength}/${maxLength}`;
+    
+    // Update styling based on usage
+    counter.classList.remove('warning', 'danger');
+    if (currentLength > maxLength * 0.9) {
+      counter.classList.add('danger');
+    } else if (currentLength > maxLength * 0.75) {
+      counter.classList.add('warning');
+    }
+  }
+
+  // Add input event listeners for character counting
+  systemPrompt.addEventListener('input', () => {
+    updateCharCounter(systemPrompt, systemPromptCounter, 1000);
+  });
+
+  customPrompt.addEventListener('input', () => {
+    updateCharCounter(customPrompt, customPromptCounter, 800);
+  });
 
   // Default prompts
   const defaultSystemPrompt = characterConfigs.robot.systemPrompt;
@@ -112,6 +139,10 @@ document.addEventListener('DOMContentLoaded', () => {
         userPrompt: customPrompt.value
       };
     }
+    
+    // Update character counters
+    updateCharCounter(systemPrompt, systemPromptCounter, 1000);
+    updateCharCounter(customPrompt, customPromptCounter, 800);
   });
 
   // Character mode selection
@@ -151,6 +182,10 @@ document.addEventListener('DOMContentLoaded', () => {
       systemPrompt.value = config.systemPrompt;
       customPrompt.value = config.userPrompt;
     }
+    
+    // Update character counters
+    updateCharCounter(systemPrompt, systemPromptCounter, 1000);
+    updateCharCounter(customPrompt, customPromptCounter, 800);
   }
 
   function updateCharacterModeUI() {
@@ -307,6 +342,10 @@ document.addEventListener('DOMContentLoaded', () => {
           systemPrompt: systemPrompt.value,
           userPrompt: customPrompt.value
         };
+        
+        // Update character counters
+        updateCharCounter(systemPrompt, systemPromptCounter, 1000);
+        updateCharCounter(customPrompt, customPromptCounter, 800);
         
         status.textContent = 'Settings Reset!';
         status.style.color = '#4285F4';

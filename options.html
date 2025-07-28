@@ -156,6 +156,19 @@
       resize: vertical;
       line-height: 1.3;
     }
+    .char-counter {
+      font-size: 0.8em;
+      color: #666;
+      text-align: right;
+      margin-top: -4px;
+      margin-bottom: 8px;
+    }
+    .char-counter.warning {
+      color: #f39c12;
+    }
+    .char-counter.danger {
+      color: #dc3545;
+    }
     .btn-row {
       display: flex;
       justify-content: space-between;
@@ -325,7 +338,7 @@
       <input type="hidden" id="apiProvider" value="groq">
     </div>
     <label for="apiKey">API Key:</label>
-    <input type="text" id="apiKey" placeholder="Enter your API key" autocomplete="off">
+    <input type="text" id="apiKey" placeholder="Enter your API key" autocomplete="off" maxlength="200">
     <label for="characterMode">Character Mode:</label>
     <div id="characterModes">
       <div class="character-mode" data-mode="robot">
@@ -350,9 +363,11 @@
       </div>
     </div>
     <label for="systemPrompt">System Prompt:</label>
-    <textarea id="systemPrompt" rows="2" placeholder="Enter your custom prompt here."></textarea>
+    <textarea id="systemPrompt" rows="2" placeholder="Enter your custom prompt here." maxlength="1000"></textarea>
+    <div class="char-counter" id="systemPromptCounter">0/1000</div>
     <label for="customPrompt">Prompt:</label>
-    <textarea id="customPrompt" rows="3" placeholder="Enter your custom prompt here."></textarea>
+    <textarea id="customPrompt" rows="3" placeholder="Enter your custom prompt here." maxlength="800"></textarea>
+    <div class="char-counter" id="customPromptCounter">0/800</div>
     <div class="btn-row">
       <button id="resetBtn" type="button" class="reset-btn">Reset Settings</button>
       <div class="main-buttons">
