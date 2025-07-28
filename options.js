@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const systemPrompt = document.getElementById('systemPrompt');
   const saveBtn = document.getElementById('saveBtn');
   const cancelBtn = document.getElementById('cancelBtn');
+  const resetBtn = document.getElementById('resetBtn');
   const status = document.getElementById('status');
   const characterModes = document.querySelectorAll('.character-mode');
 
@@ -46,13 +47,16 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   let currentCharacterMode = 'robot';
+  
+  // Store for modified prompts
+  let modifiedPrompts = {};
 
   // Default prompts
   const defaultSystemPrompt = characterConfigs.robot.systemPrompt;
   const defaultPrompt = characterConfigs.robot.userPrompt;
 
   // Load saved settings
-  chrome.storage.sync.get(['apiProvider', 'apiKey', 'customPrompt', 'systemPrompt', 'characterMode'], (data) => {
+  chrome.storage.sync.get(['apiProvider', 'apiKey', 'customPrompt', 'systemPrompt', 'characterMode', 'modifiedPrompts'], (data) => {
     if (data.apiProvider) {
       apiProvider.value = data.apiProvider;
       // Update custom dropdown display
@@ -84,28 +88,70 @@ document.addEventListener('DOMContentLoaded', () => {
     currentCharacterMode = data.characterMode || 'robot';
     updateCharacterModeUI();
     
-    // Set prompts - use saved values if available, otherwise use character defaults
-    systemPrompt.value = (typeof data.systemPrompt === 'string' && data.systemPrompt.trim().length > 0)
-      ? data.systemPrompt
-      : characterConfigs[currentCharacterMode].systemPrompt;
-    customPrompt.value = (typeof data.customPrompt === 'string' && data.customPrompt.trim().length > 0)
-      ? data.customPrompt
-      : characterConfigs[currentCharacterMode].userPrompt;
+    // Load saved modified prompts if available
+    if (data.modifiedPrompts) {
+      modifiedPrompts = data.modifiedPrompts;
+    }
+    
+    // Set prompts - check for modified prompts first
+    if (modifiedPrompts[currentCharacterMode]) {
+      systemPrompt.value = modifiedPrompts[currentCharacterMode].systemPrompt;
+      customPrompt.value = modifiedPrompts[currentCharacterMode].userPrompt;
+    } else {
+      // Use saved values or character defaults
+      systemPrompt.value = (typeof data.systemPrompt === 'string' && data.systemPrompt.trim().length > 0)
+        ? data.systemPrompt
+        : characterConfigs[currentCharacterMode].systemPrompt;
+      customPrompt.value = (typeof data.customPrompt === 'string' && data.customPrompt.trim().length > 0)
+        ? data.customPrompt
+        : characterConfigs[currentCharacterMode].userPrompt;
+      
+      // Initialize modified prompts with current values
+      modifiedPrompts[currentCharacterMode] = {
+        systemPrompt: systemPrompt.value,
+        userPrompt: customPrompt.value
+      };
+    }
   });
 
   // Character mode selection
   characterModes.forEach(mode => {
     mode.addEventListener('click', () => {
+      // Save current prompts before switching
+      saveCurrentPrompts();
+      
       const selectedMode = mode.dataset.mode;
       currentCharacterMode = selectedMode;
       updateCharacterModeUI();
       
-      // Update prompts based on selected character (but keep them editable)
-      const config = characterConfigs[selectedMode];
-      systemPrompt.value = config.systemPrompt;
-      customPrompt.value = config.userPrompt;
+      // Load prompts for selected character (check for modified versions first)
+      loadPromptsForMode(selectedMode);
     });
   });
+
+  function saveCurrentPrompts() {
+    // Save the current prompts for the current mode
+    modifiedPrompts[currentCharacterMode] = {
+      systemPrompt: systemPrompt.value,
+      userPrompt: customPrompt.value
+    };
+    
+    // Save to storage immediately
+    chrome.storage.sync.set({ modifiedPrompts: modifiedPrompts });
+  }
+
+  function loadPromptsForMode(mode) {
+    // Check if we have modified prompts for this mode first
+    if (modifiedPrompts[mode]) {
+      systemPrompt.value = modifiedPrompts[mode].systemPrompt;
+      customPrompt.value = modifiedPrompts[mode].userPrompt;
+    } else {
+      // Use default prompts for the mode
+      const config = characterConfigs[mode];
+      systemPrompt.value = config.systemPrompt;
+      customPrompt.value = config.userPrompt;
+    }
+  }
 
   function updateCharacterModeUI() {
     characterModes.forEach(mode => {
@@ -182,6 +228,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   saveBtn.onclick = () => {
+    // Save current prompts before validation
+    saveCurrentPrompts();
+    
     // Validate custom mode prompts
     if (currentCharacterMode === 'custom') {
       const systemPromptValue = systemPrompt.value.trim();
@@ -209,7 +258,8 @@ document.addEventListener('DOMContentLoaded', () => {
       model: selectedModel,
       customPrompt: customPrompt.value,
       systemPrompt: systemPrompt.value,
-      characterMode: currentCharacterMode
+      characterMode: currentCharacterMode,
+      modifiedPrompts: modifiedPrompts
     }, () => {
       status.textContent = 'Saved!';
       status.style.color = '#4285F4';
@@ -218,6 +268,50 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   cancelBtn.onclick = () => {
+    // Save current prompts before closing
+    saveCurrentPrompts();
     window.close();
+  };
+
+  // Auto-save prompts when window closes
+  window.addEventListener('beforeunload', () => {
+    saveCurrentPrompts();
+  });
+
+  resetBtn.onclick = () => {
+    if (confirm('Are you sure you want to reset all settings? This will clear all data including API keys and custom prompts.')) {
+      // Clear all storage
+      chrome.storage.sync.clear(() => {
+        // Reset form to defaults
+        apiProvider.value = 'groq';
+        selectSelected.textContent = 'Groq';
+        document.querySelectorAll('.select-items div').forEach(div => {
+          div.classList.remove('same-as-selected');
+        });
+        document.querySelector('[data-value="groq"]').classList.add('same-as-selected');
+        updateProviderIcon();
+        
+        apiKey.value = '';
+        apiKey.dataset.real = '';
+        
+        currentCharacterMode = 'robot';
+        updateCharacterModeUI();
+        
+        // Reset prompts to defaults
+        systemPrompt.value = characterConfigs.robot.systemPrompt;
+        customPrompt.value = characterConfigs.robot.userPrompt;
+        
+        // Clear modified prompts
+        modifiedPrompts = {};
+        modifiedPrompts[currentCharacterMode] = {
+          systemPrompt: systemPrompt.value,
+          userPrompt: customPrompt.value
+        };
+        
+        status.textContent = 'Settings Reset!';
+        status.style.color = '#4285F4';
+        setTimeout(() => status.textContent = '', 2000);
+      });
+    }
   };
 });

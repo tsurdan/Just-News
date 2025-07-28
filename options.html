@@ -158,10 +158,26 @@
     }
     .btn-row {
       display: flex;
-      justify-content: flex-end;
+      justify-content: space-between;
       align-items: center;
       margin-top: 16px;
       gap: 8px;
+    }
+    .main-buttons {
+      display: flex;
+      gap: 8px;
+    }
+    .reset-btn {
+      background: #dc3545 !important;
+      color: #fff !important;
+      font-size: 0.85em !important;
+      padding: 6px 12px !important;
+      opacity: 0.8;
+    }
+    .reset-btn:hover {
+      background: #c82333 !important;
+      opacity: 1;
+      box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3) !important;
     }
     button {
       background: #4285F4;
@@ -338,8 +354,11 @@
     <label for="customPrompt">Prompt:</label>
     <textarea id="customPrompt" rows="3" placeholder="Enter your custom prompt here."></textarea>
     <div class="btn-row">
-      <button id="saveBtn">Save</button>
-      <button id="cancelBtn" type="button">Cancel</button>
+      <button id="resetBtn" type="button" class="reset-btn">Reset Settings</button>
+      <div class="main-buttons">
+        <button id="saveBtn">Save</button>
+        <button id="cancelBtn" type="button">Cancel</button>
+      </div>
       <span id="status"></span>
     </div>
   </div>
