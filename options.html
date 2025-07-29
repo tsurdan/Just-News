@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Just News - Options</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #4285F4;
+      margin: 0;
+      padding: 10px;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #options-container {
+      background: #ffffff;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(66, 133, 244, 0.3);
+      padding: 32px;
+      min-width: 450px;
+      max-width: 600px;
+      width: 80vw;
+      max-height: 95vh;
+      overflow-y: auto;
+    }
+    h2 {
+      margin: 0 0 16px 0;
+      font-size: 1.6em;
+      color: #4285F4;
+      text-align: center;
+      font-weight: 600;
+      letter-spacing: -0.3px;
+    }
+    label {
+      font-size: 1em;
+      color: #4285F4;
+      margin: 16px 0 6px 0;
+      font-weight: 600;
+      display: block;
+    }
+    input[type="text"], select, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1px solid #4285F4;
+      border-radius: 6px;
+      font-size: 1em;
+      margin-bottom: 6px;
+      box-sizing: border-box;
+      background: #ffffff;
+      transition: all 0.3s ease;
+      font-family: inherit;
+    }
+    
+    /* API Provider styling */
+    .api-provider-container {
+      position: relative;
+    }
+    .custom-select {
+      position: relative;
+      width: 100%;
+    }
+    .select-selected {
+      background-color: #ffffff;
+      border: 1px solid #4285F4;
+      border-radius: 6px;
+      padding: 12px 14px 12px 45px;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      font-size: 1em;
+      font-family: inherit;
+      transition: all 0.3s ease;
+      position: relative;
+    }
+    .select-selected:hover, .select-selected.select-arrow-active {
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+    }
+    .select-selected::after {
+      content: '';
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 5px solid #4285F4;
+      transition: transform 0.3s ease;
+    }
+    .select-selected.select-arrow-active::after {
+      transform: translateY(-50%) rotate(180deg);
+    }
+    .api-provider-icon {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
+      z-index: 1;
+      object-fit: contain;
+    }
+    .select-items {
+      position: absolute;
+      background-color: #ffffff;
+      top: 100%;
+      left: 0;
+      right: 0;
+      z-index: 99;
+      border: 1px solid #4285F4;
+      border-top: none;
+      border-radius: 0 0 6px 6px;
+      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.2);
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .select-hide {
+      display: none;
+    }
+    .select-items div {
+      padding: 12px 14px 12px 45px;
+      cursor: pointer;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      font-size: 1em;
+      font-family: inherit;
+      position: relative;
+      transition: background-color 0.2s ease;
+    }
+    .select-items div:hover, .same-as-selected {
+      background-color: #f8f9ff;
+    }
+    .select-items div img {
+      position: absolute;
+      left: 14px;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 20px;
+      height: 20px;
+      object-fit: contain;
+    }
+    input[type="text"]:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: #1a73e8;
+      box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
+    }
+    textarea {
+      min-height: 60px;
+      resize: vertical;
+      line-height: 1.3;
+    }
+    .char-counter {
+      font-size: 0.8em;
+      color: #666;
+      text-align: right;
+      margin-top: -4px;
+      margin-bottom: 8px;
+    }
+    .char-counter.warning {
+      color: #f39c12;
+    }
+    .char-counter.danger {
+      color: #dc3545;
+    }
+    .btn-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 16px;
+      gap: 8px;
+    }
+    .main-buttons {
+      display: flex;
+      gap: 8px;
+    }
+    .reset-btn {
+      background: #dc3545 !important;
+      color: #fff !important;
+      font-size: 0.85em !important;
+      padding: 6px 12px !important;
+      opacity: 0.8;
+    }
+    .reset-btn:hover {
+      background: #c82333 !important;
+      opacity: 1;
+      box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3) !important;
+    }
+    button {
+      background: #4285F4;
+      color: #fff;
+      border: none;
+      padding: 10px 20px;
+      border-radius: 6px;
+      font-size: 1em;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      font-family: inherit;
+    }
+    button:hover {
+      background: #1a73e8;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.3);
+    }
+    button#cancelBtn {
+      background: #6c757d;
+      color: #fff;
+    }
+    button#cancelBtn:hover {
+      background: #5a6268;
+      box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+    }
+    #status {
+      color: #4285F4;
+      font-size: 0.95em;
+      font-weight: 600;
+      min-width: 60px;
+    }
+    
+    /* Character Mode Styles */
+    #characterModes {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      margin: 12px 0 16px 0;
+    }
+    .character-mode {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px 4px;
+      border: 1px solid #4285F4;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: #ffffff;
+      text-align: center;
+    }
+    .character-mode:hover {
+      border-color: #1a73e8;
+      background: #f8f9ff;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.2);
+    }
+    .character-mode.selected {
+      border-color: #4285F4;
+      background: #4285F4;
+      color: white;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 16px rgba(66, 133, 244, 0.4);
+    }
+    .character-icon {
+      width: 36px;
+      height: 36px;
+      margin-bottom: 4px;
+      object-fit: contain;
+      transition: all 0.3s ease;
+    }
+    .character-mode.selected .character-icon {
+      filter: brightness(0) invert(1);
+    }
+    .character-name {
+      font-size: 0.75em;
+      font-weight: 600;
+      color: #4285F4;
+      line-height: 1.1;
+    }
+    .character-mode.selected .character-name {
+      color: #ffffff;
+    }
+    
+    /* API Key Links */
+    .api-key-link {
+      color: #1a73e8;
+      text-decoration: none;
+      font-size: 0.9em;
+      font-weight: 600;
+      padding: 6px 12px;
+      background: #ffffff;
+      border: 1px solid #1a73e8;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      display: inline-block;
+      margin-left: 4px;
+    }
+    .api-key-link:hover {
+      background: #1a73e8;
+      color: #ffffff;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(26, 115, 232, 0.3);
+    }
+    
+    @media (max-width: 600px) {
+      body { padding: 8px; }
+      #options-container { 
+        padding: 16px; 
+        min-width: 0; 
+        width: 95vw; 
+        max-height: 98vh;
+      }
+      h2 { font-size: 1.4em; margin-bottom: 12px; }
+      #characterModes {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+      }
+      .character-mode {
+        padding: 10px 6px;
+      }
+      .character-icon {
+        width: 32px;
+        height: 32px;
+      }
+      .character-name {
+        font-size: 0.75em;
+      }
+      label { font-size: 0.9em; margin: 10px 0 3px 0; }
+      input[type="text"], select, textarea, button {
+        font-size: 0.9em;
+        padding: 8px 10px;
+      }
+      textarea { min-height: 40px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="options-container">
+    <h2>Just News Settings</h2>
+    <label for="apiProvider">API Provider:</label>
+    <div class="api-provider-container">
+      <img src="more icons/groq.png" alt="Groq" class="api-provider-icon" id="providerIcon">
+      <div class="custom-select">
+        <div class="select-selected" id="selectSelected">Groq</div>
+        <div class="select-items select-hide" id="selectItems">
+          <div data-value="groq">
+            <img src="more icons/groq.png" alt="Groq">
+            Groq
+          </div>
+          <div data-value="openai">
+            <img src="more icons/openai.png" alt="OpenAI">
+            OpenAI
+          </div>
+          <div data-value="claude">
+            <img src="more icons/claude.png" alt="Claude">
+            Claude
+          </div>
+          <div data-value="gemini">
+            <img src="more icons/gemini.png" alt="Gemini">
+            Gemini
+          </div>
+        </div>
+      </div>
+      <input type="hidden" id="apiProvider" value="groq">
+    </div>
+    <label for="apiKey">API Key:</label>
+    <input type="text" id="apiKey" placeholder="Enter your API key" autocomplete="off" maxlength="200">
+    <div id="apiKeyLinks" style="margin-top: 8px; margin-bottom: 12px; padding: 10px; background: #f8f9ff; border-radius: 6px; border: 1px solid #e3f2fd;">
+      <span style="font-size: 0.85em; color: #666; margin-right: 8px;">🔑 Need an API key?</span>
+      <a href="https://console.groq.com/keys" target="_blank" id="groqLink" class="api-key-link">Get Groq API Key →</a>
+      <a href="https://platform.openai.com/api-keys" target="_blank" id="openaiLink" class="api-key-link" style="display: none;">Get OpenAI API Key →</a>
+      <a href="https://console.anthropic.com/settings/keys" target="_blank" id="claudeLink" class="api-key-link" style="display: none;">Get Claude API Key →</a>
+      <a href="https://aistudio.google.com/app/apikey" target="_blank" id="geminiLink" class="api-key-link" style="display: none;">Get Gemini API Key →</a>
+    </div>
+    <label for="characterMode">Character Mode:</label>
+    <div id="characterModes">
+      <div class="character-mode" data-mode="robot">
+        <img src="more icons/robot.png" alt="Robot" class="character-icon">
+        <span class="character-name">Robot</span>
+      </div>
+      <div class="character-mode" data-mode="cynic">
+        <img src="more icons/cynic.png" alt="Cynic" class="character-icon">
+        <span class="character-name">Cynic</span>
+      </div>
+      <div class="character-mode" data-mode="optimist">
+        <img src="more icons/optimist.png" alt="Optimist" class="character-icon">
+        <span class="character-name">Optimist</span>
+      </div>
+      <div class="character-mode" data-mode="conspirator">
+        <img src="more icons/conspirator.png" alt="Conspirator" class="character-icon">
+        <span class="character-name">Conspirator</span>
+      </div>
+      <div class="character-mode" data-mode="custom">
+        <img src="more icons/custom.png" alt="Custom" class="character-icon">
+        <span class="character-name">Custom</span>
+      </div>
+    </div>
+    <label for="systemPrompt">System Prompt:</label>
+    <textarea id="systemPrompt" rows="2" placeholder="Enter your custom prompt here." maxlength="1000"></textarea>
+    <div class="char-counter" id="systemPromptCounter">0/1000</div>
+    <label for="customPrompt">Prompt:</label>
+    <textarea id="customPrompt" rows="3" placeholder="Enter your custom prompt here." maxlength="800"></textarea>
+    <div class="char-counter" id="customPromptCounter">0/800</div>
+    <div class="btn-row">
+      <button id="resetBtn" type="button" class="reset-btn">Reset Settings</button>
+      <div class="main-buttons">
+        <button id="saveBtn">Save</button>
+        <button id="cancelBtn" type="button">Cancel</button>
+      </div>
+      <span id="status"></span>
+    </div>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>
