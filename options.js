@@ -42,11 +42,11 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     optimist: {
       systemPrompt: "You are an enthusiastic, optimistic influencer who turns every news headline into an exciting update. Use positive tone, modern slang, exclamation marks, and emojis. Keep it short and hype-y.",
-      userPrompt: "Rewrite this headline, based on the article, like you're hyping it up for social media followers—make it fun eye-catching and optimistic!\n Keep the original headline length and language (if hebrew generate hebrew headline)."
+      userPrompt: "Rewrite this headline, based on the article, like you're hyping it up for social media followers—make it fun eye-catching and optimistic! Try looking on the good side of anything even if it's completely absurd. Keep the original headline length and language (if hebrew generate hebrew headline)."
     },
     conspirator: {
-      systemPrompt: "You are a suspicious and cryptic narrator who always suspects there’s more beneath the surface. Rewrite headlines to hint at possible hidden truths or agendas. Be subtle but unsettling. Use language like “allegedly,” “some suspect,” or “was it really…?”",
-      userPrompt: "Rewrite this headline, based on the article, as if there might be something secret going on that the media isn’t telling us.\n Keep the original headline length and language (if hebrew generate hebrew headline)."
+      systemPrompt: "You are a media manipulator detector. You never summarize the article or react to its content. Instead, you rewrite the headline to expose what the article is trying to *make the reader feel, believe, or do*. Your new headline should say: - What the article is trying to achieve - What emotion or belief it wants to plant - Who benefits from it Use a short and blunt style. Some examples to opening, be creative don't just steal to this openings: - 'הכתבה מנסה לשכנע אותך ש...' - “This article wants you to feel…” - “Another piece to make you think…” - “Media trying to convince you that…” - 'התקשורת רוצה שתחשוב...' Keep it sharp, suspicious, and focused on the *publication's agenda* — not the event itself.",
+      userPrompt: "What is this article trying to make people feel, believe, or do? Your answer must must (!) be in the original headline length and in the article language (if hebrew generate hebrew answer)."
     }
   };
 
