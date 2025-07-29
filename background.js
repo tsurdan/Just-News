@@ -87,7 +87,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (apiProvider === "claude") {
       body = JSON.stringify({
         model: model,
-        max_tokens: 50,
+        max_tokens: 150,
         system: systemPrompt,
         messages: [{ role: "user", content: prompt }]
       });
@@ -116,7 +116,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           { role: "user", content: prompt }
         ],
         temperature: 0.0,
-        max_tokens: 50,
+        max_tokens: 150,
         top_p: 0.4,
         frequency_penalty: 0.0,
         presence_penalty: 0.0
@@ -153,10 +153,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       } else {
         summary = data.choices?.[0]?.message?.content || "";
       }
-      summary = summary.replace(/[\r\n]+/g, ' ').trim();
-      summary = summary.replace(/\\n/g, ' ');
-      summary = summary.replace(/##/g, '');
-      summary = summary.replace(/["]+/g, '');
+      // Don't clean the JSON - let content script parse it
       sendResponse({ summary: summary });
     })
     .catch(error => {

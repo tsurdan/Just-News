@@ -17,6 +17,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectSelected = document.getElementById('selectSelected');
   const selectItems = document.getElementById('selectItems');
   const providerIcon = document.getElementById('providerIcon');
+  
+  // API key link elements
+  const groqLink = document.getElementById('groqLink');
+  const openaiLink = document.getElementById('openaiLink');
+  const claudeLink = document.getElementById('claudeLink');
+  const geminiLink = document.getElementById('geminiLink');
 
   // Default models for each API provider
   const defaultModels = {
@@ -30,7 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const characterConfigs = {
     robot: {
       systemPrompt: "Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.",
-      userPrompt: "Rewrite the headline, based on the article, with these rules:\n\nRobotic, factual, no clickbait.\nSummarizing the key point of the article.\nKeep the original headline length and language (if hebrew generate hebrew headline)."
+      userPrompt: "Rewrite the headline, based on the article, with these rules:\n\n- Robotic, factual, no clickbait\n- Summarize the key point of the article\n- Keep the original headline length and language (if Hebrew generate Hebrew headline)\n- Be objective and informative"
     },
     custom: {
       systemPrompt: "",
@@ -38,11 +44,11 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     cynic: {
       systemPrompt: "You are a cynical, highly intelligent, and sarcastic analyst. You break down headlines with wit and sharp commentary. Your tone is casual, jaded, and often darkly humorous.",
-      userPrompt: "Rewrite this headline, based on the article, in your usual sarcastic tone. Expose any nonsense and dont sugarcoat anything. you can use foul language.\n Keep the original headline length and language (if hebrew generate hebrew headline)."
+      userPrompt: "Rewrite this headline, based on the article, in your usual sarcastic tone. Expose any nonsense and don't sugarcoat anything. You can use foul language.\n\nKeep the original headline length and language (if Hebrew generate Hebrew headline)."
     },
     optimist: {
       systemPrompt: "You are an enthusiastic, optimistic influencer who turns every news headline into an exciting update. Use positive tone, modern slang, exclamation marks, and emojis. Keep it short and hype-y.",
-      userPrompt: "Rewrite this headline, based on the article, like you're hyping it up for social media followers—make it fun eye-catching and optimistic! Try looking on the good side of anything even if it's completely absurd. Keep the original headline length and language (if hebrew generate hebrew headline)."
+      userPrompt: "Rewrite this headline, based on the article, like you're hyping it up for social media followers—make it fun, eye-catching and optimistic! Try looking on the good side of anything even if it's completely absurd.\n\nKeep the original headline length and language (if Hebrew generate Hebrew headline)."
     },
     conspirator: {
       systemPrompt: "You are a media manipulator detector. You never summarize the article or react to its content. Instead, you rewrite the headline to expose what the article is trying to *make the reader feel, believe, or do*. Your new headline should say: - What the article is trying to achieve - What emotion or belief it wants to plant - Who benefits from it Use a short and blunt style. Some examples to opening, be creative don't just steal to this openings: - 'הכתבה מנסה לשכנע אותך ש...' - “This article wants you to feel…” - “Another piece to make you think…” - “Media trying to convince you that…” - 'התקשורת רוצה שתחשוב...' Keep it sharp, suspicious, and focused on the *publication's agenda* — not the event itself.",
@@ -96,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectedItem.classList.add('same-as-selected');
       }
     }
-    updateProviderIcon(); // Set initial icon
+    updateProviderIcon(); // Set initial icon and API key link
     
     // Show only first and last 2 chars of key, mask the rest
     if (data.apiKey && data.apiKey.length > 6) {
@@ -246,6 +252,34 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedValue = apiProvider.value;
     iconElement.src = `more icons/${selectedValue}.png`;
     iconElement.alt = selectedValue.charAt(0).toUpperCase() + selectedValue.slice(1);
+    
+    // Update API key link visibility
+    updateApiKeyLink();
+  }
+  
+  function updateApiKeyLink() {
+    // Hide all links first
+    groqLink.style.display = 'none';
+    openaiLink.style.display = 'none';
+    claudeLink.style.display = 'none';
+    geminiLink.style.display = 'none';
+    
+    // Show the appropriate link based on selected provider
+    const selectedValue = apiProvider.value;
+    switch (selectedValue) {
+      case 'groq':
+        groqLink.style.display = 'inline';
+        break;
+      case 'openai':
+        openaiLink.style.display = 'inline';
+        break;
+      case 'claude':
+        claudeLink.style.display = 'inline';
+        break;
+      case 'gemini':
+        geminiLink.style.display = 'inline';
+        break;
+    }
   }
 
   // When user focuses the key input, show the real key if available

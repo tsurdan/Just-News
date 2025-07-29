@@ -276,6 +276,27 @@
       color: #ffffff;
     }
     
+    /* API Key Links */
+    .api-key-link {
+      color: #1a73e8;
+      text-decoration: none;
+      font-size: 0.9em;
+      font-weight: 600;
+      padding: 6px 12px;
+      background: #ffffff;
+      border: 1px solid #1a73e8;
+      border-radius: 4px;
+      transition: all 0.2s ease;
+      display: inline-block;
+      margin-left: 4px;
+    }
+    .api-key-link:hover {
+      background: #1a73e8;
+      color: #ffffff;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 8px rgba(26, 115, 232, 0.3);
+    }
+    
     @media (max-width: 600px) {
       body { padding: 8px; }
       #options-container { 
@@ -339,6 +360,13 @@
     </div>
     <label for="apiKey">API Key:</label>
     <input type="text" id="apiKey" placeholder="Enter your API key" autocomplete="off" maxlength="200">
+    <div id="apiKeyLinks" style="margin-top: 8px; margin-bottom: 12px; padding: 10px; background: #f8f9ff; border-radius: 6px; border: 1px solid #e3f2fd;">
+      <span style="font-size: 0.85em; color: #666; margin-right: 8px;">🔑 Need an API key?</span>
+      <a href="https://console.groq.com/keys" target="_blank" id="groqLink" class="api-key-link">Get Groq API Key →</a>
+      <a href="https://platform.openai.com/api-keys" target="_blank" id="openaiLink" class="api-key-link" style="display: none;">Get OpenAI API Key →</a>
+      <a href="https://console.anthropic.com/settings/keys" target="_blank" id="claudeLink" class="api-key-link" style="display: none;">Get Claude API Key →</a>
+      <a href="https://aistudio.google.com/app/apikey" target="_blank" id="geminiLink" class="api-key-link" style="display: none;">Get Gemini API Key →</a>
+    </div>
     <label for="characterMode">Character Mode:</label>
     <div id="characterModes">
       <div class="character-mode" data-mode="robot">

@@ -9,7 +9,10 @@
     "storage"
   ],
   "host_permissions": [
-    "https://api.groq.com/openai/v1/chat/completions"
+    "https://api.groq.com/*",
+    "https://api.openai.com/*",
+    "https://api.anthropic.com/*",
+    "https://generativelanguage.googleapis.com/*"
   ],
   "action": {
     "default_title": "Summarize Headlines, Remove clickbait"

@@ -1,8 +1,12 @@
 let isInitialized = false;
 let counter = 0;
+let articleSummaries = new Map(); // Cache for article summaries
 
 function initializeContentScript() {
   if (isInitialized) return;
+  
+  // Add tooltip styles to the page
+  addTooltipStyles();
 
   // Listen for messages from the background script
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -17,6 +21,46 @@ function initializeContentScript() {
   isInitialized = true;
 }
 
+// Add CSS styles for tooltips
+function addTooltipStyles() {
+  if (document.getElementById('just-news-tooltip-styles')) return;
+  
+  const style = document.createElement('style');
+  style.id = 'just-news-tooltip-styles';
+  style.textContent = `
+    .just-news-tooltip {
+      position: fixed;
+      background: rgba(0, 0, 0, 0.9);
+      color: white;
+      padding: 12px 16px;
+      border-radius: 8px;
+      font-size: 14px;
+      line-height: 1.4;
+      max-width: 350px;
+      z-index: 10000;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      word-wrap: break-word;
+    }
+    .just-news-tooltip.show {
+      opacity: 1;
+    }
+    .just-news-tooltip-loading {
+      color: #aaa;
+      font-style: italic;
+    }
+    .just-news-processed-headline {
+      cursor: help;
+      position: relative;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 async function summarizeHeadlines() {
   let apiKey = "";
   let apiProvider = "groq";
@@ -26,9 +70,10 @@ async function summarizeHeadlines() {
   const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
   const defaultPrompt = `Rewrite the headline with these rules:
 
-Robotic, factual, no clickbait.
-Summarizing the key point of the article.
-Keep the original language (if it hebrew give new hebrew title) and length.`;
+- Robotic, factual, no clickbait
+- Summarize the key point of the article
+- Keep the original language (if Hebrew, give new Hebrew title) and similar length
+- Be objective and informative`;
 
   try {
     const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt']);
@@ -101,9 +146,14 @@ Keep the original language (if it hebrew give new hebrew title) and length.`;
     if (articleUrl) {
       promises.push(
         fetchSummary(sourceHeadline, articleUrl, apiOptions)
-          .then(summary => {
-            const sanitizedSummary = summary.replace(/[\r\n]+/g, ' ').trim();
-            typeHeadline(headline, `~${sanitizedSummary}`);
+          .then(result => {
+            // Parse the JSON response using dedicated function
+            const { headline: newHeadline, summary } = parseAIResponse(result);
+            
+            // Cache the summary for tooltip use
+            articleSummaries.set(articleUrl, summary);
+            
+            typeHeadline(headline, `~${newHeadline}`);
             counter++;
             // Notify background to clear badge after first headline changes
             if (!firstHeadlineChanged) {
@@ -112,10 +162,14 @@ Keep the original language (if it hebrew give new hebrew title) and length.`;
             }
           })
           .catch(error => {
+            // Skip this headline if there's an error (including JSON parsing issues)
             if (error.message && error.message.includes('Rate limit')) {
               rateLimitHit = true;
             }
-            throw new Error(error.message);
+            // Don't throw the error for JSON parsing issues, just skip the headline
+            if (!error.message.includes('skipping')) {
+              throw new Error(error.message);
+            }
           })
       );
     }
@@ -161,7 +215,93 @@ Keep the original language (if it hebrew give new hebrew title) and length.`;
   }
 }
 
-// Function to type the headline letter by letter
+// Function to parse AI response and extract headline and summary
+function parseAIResponse(result) {
+  let newHeadline, summary;
+  
+  // Clean the result first - remove markdown code blocks if present
+  let cleanResult = result.trim();
+  if (cleanResult.startsWith('```json')) {
+    cleanResult = cleanResult.replace(/```json\s*/, '').replace(/\s*```$/, '');
+  }
+  if (cleanResult.startsWith('```')) {
+    cleanResult = cleanResult.replace(/```\s*/, '').replace(/\s*```$/, '');
+  }
+  
+  try {
+    // Try to parse as JSON
+    const parsed = JSON.parse(cleanResult);
+    newHeadline = parsed.new_headline || parsed.headline || parsed.title;
+    summary = parsed.article_summary || parsed.summary || parsed.description;
+    
+    // If we don't have both parts, throw error to trigger fallback
+    if (!newHeadline || !summary) {
+      throw new Error('Missing required fields in JSON');
+    }
+    
+  } catch (e) {
+    // Enhanced fallback: try to extract JSON from text with better patterns
+    const jsonPatterns = [
+      /\{[^{}]*"new_headline"[^{}]*"article_summary"[^{}]*\}/s,
+      /\{[^{}]*"headline"[^{}]*"summary"[^{}]*\}/s,
+      /\{.*?"new_headline".*?"article_summary".*?\}/s,
+      /\{.*?"headline".*?"summary".*?\}/s,
+      /\{[\s\S]*?"new_headline"[\s\S]*?"article_summary"[\s\S]*?\}/,
+      /\{[\s\S]*?"headline"[\s\S]*?"summary"[\s\S]*?\}/
+    ];
+    
+    let jsonFound = false;
+    for (const pattern of jsonPatterns) {
+      const match = result.match(pattern);
+      if (match) {
+        try {
+          const extracted = JSON.parse(match[0]);
+          newHeadline = extracted.new_headline || extracted.headline || extracted.title;
+          summary = extracted.article_summary || extracted.summary || extracted.description;
+          
+          if (newHeadline && summary) {
+            jsonFound = true;
+            break;
+          }
+        } catch (e2) {
+          continue; // Try next pattern
+        }
+      }
+    }
+    
+    // If no valid JSON found, skip this headline to prevent showing raw JSON
+    if (!jsonFound) {
+      throw new Error('Unable to parse AI response - skipping headline');
+    }
+  }
+  
+  // Validate headline doesn't look like JSON
+  if (newHeadline.includes('{') || newHeadline.includes('"new_headline"')) {
+    throw new Error('Headline appears to be malformed JSON - skipping');
+  }
+  
+  // Clean and validate the headline
+  if (typeof newHeadline !== 'string' || newHeadline.trim() === '') {
+    throw new Error('Invalid headline format - skipping');
+  }
+  
+  const sanitizedHeadline = newHeadline.replace(/[\r\n]+/g, ' ').trim();
+  
+  // Clean the summary
+  if (typeof summary === 'string') {
+    summary = summary.replace(/[\r\n]+/g, ' ').trim();
+    // Limit summary length
+    if (summary.length > 300) {
+      summary = summary.substring(0, 297) + '...';
+    }
+  } else {
+    summary = 'Summary unavailable';
+  }
+  
+  return { headline: sanitizedHeadline, summary: summary };
+}
+
+
 function typeHeadline(element, text) {
   let index = 0;
   element.textContent = '';
@@ -171,8 +311,112 @@ function typeHeadline(element, text) {
       index++;
     } else {
       clearInterval(interval);
+      // Add tooltip functionality after typing is complete
+      setupTooltip(element);
     }
   }, 50); // Adjust typing speed by changing the interval time
+}
+
+// Setup tooltip functionality for a processed headline
+function setupTooltip(element) {
+  element.classList.add('just-news-processed-headline');
+  
+  let tooltip = null;
+  let tooltipTimeout = null;
+  const articleUrl = element.href || element.closest('a')?.href;
+  
+  if (!articleUrl) return;
+  
+  element.addEventListener('mouseenter', () => {
+    // Clear any existing timeout
+    if (tooltipTimeout) {
+      clearTimeout(tooltipTimeout);
+    }
+    
+    // Add delay before showing tooltip
+    tooltipTimeout = setTimeout(() => {
+      // Create tooltip
+      tooltip = document.createElement('div');
+      tooltip.className = 'just-news-tooltip';
+      
+      // Get cached summary (should already be available from initial API call)
+      if (articleSummaries.has(articleUrl)) {
+        const summary = articleSummaries.get(articleUrl);
+        tooltip.textContent = summary;
+      } else {
+        tooltip.textContent = 'Summary unavailable';
+      }
+      
+      document.body.appendChild(tooltip);
+      
+      // Position tooltip after a small delay to ensure it's rendered
+      setTimeout(() => {
+        positionTooltip(element, tooltip);
+        
+        // Show tooltip
+        tooltip.classList.add('show');
+      }, 10);
+    }, 500); // 500ms delay before showing tooltip
+  });
+  
+  element.addEventListener('mouseleave', () => {
+    // Clear timeout if mouse leaves before tooltip shows
+    if (tooltipTimeout) {
+      clearTimeout(tooltipTimeout);
+      tooltipTimeout = null;
+    }
+    
+    if (tooltip && tooltip.parentNode) {
+      tooltip.classList.remove('show');
+      setTimeout(() => {
+        if (tooltip && tooltip.parentNode) {
+          document.body.removeChild(tooltip);
+        }
+      }, 300);
+      tooltip = null;
+    }
+  });
+}
+
+// Position tooltip relative to the element and mouse
+function positionTooltip(element, tooltip, mouseEvent = null) {
+  const rect = element.getBoundingClientRect();
+  const viewportWidth = window.innerWidth;
+  const viewportHeight = window.innerHeight;
+  
+  let x, y;
+  
+  // Always position tooltip centered under the headline
+  x = rect.left + (rect.width / 2);
+  y = rect.bottom + 10;
+  
+  // Make sure tooltip stays within viewport
+  const tooltipWidth = 350; // max-width from CSS
+  const tooltipHeight = 100; // estimate
+  
+  // Center the tooltip horizontally relative to its own width
+  x = x - (tooltipWidth / 2);
+  
+  // Adjust if tooltip goes off screen horizontally
+  if (x + tooltipWidth > viewportWidth - 10) {
+    x = viewportWidth - tooltipWidth - 10;
+  }
+  if (x < 10) {
+    x = 10;
+  }
+  
+  // Adjust if tooltip goes off screen vertically
+  if (y + tooltipHeight > viewportHeight - 10) {
+    y = rect.top - tooltipHeight - 10;
+  }
+  if (y < 10) {
+    y = rect.bottom + 10;
+  }
+  
+  tooltip.style.left = x + 'px';
+  tooltip.style.top = y + 'px';
+  tooltip.style.position = 'fixed';
+  tooltip.style.zIndex = '10000';
 }
 
 async function fetchSummary(sourceHeadline, url, options) {
@@ -244,12 +488,19 @@ async function fetchContent(url) {
 
 async function summarizeContnet(sourceHeadline, content, options) {
   const { apiKey, apiProvider, model, customPrompt, systemPrompt } = options;
-  const defaultEndOfPrompt = 
-  `Original: ${sourceHeadline}
-   Article: ${content}
+  
+  // System-controlled instructions that users cannot modify
+  const systemInstructions = `
 
-   Return only the new headline.`;
-  const prompt = customPrompt + defaultEndOfPrompt;
+Original: ${sourceHeadline}
+Article: ${content}
+
+IMPORTANT: You must return your response in this exact JSON format:
+{"new_headline": "<your rewritten headline>", "article_summary": "<2-3 sentence objective summary of the article>"}
+
+Do not add any text before or after the JSON. Only return the JSON object.`;
+  
+  const prompt = customPrompt + systemInstructions;
   const response = await chrome.runtime.sendMessage({
     action: 'AIcall',
     sourceHeadline,
