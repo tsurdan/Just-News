@@ -5,6 +5,8 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
 
+const DAILY_LIMIT = 50;
+
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'fetchContent') {
@@ -160,11 +162,87 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sendResponse({ error: error.message });
     });
     return true; // Will respond asynchronously
+  } else if (request.action === 'checkPremium') {
+    // Check premium status from storage
+    chrome.storage.sync.get(['premium'], (result) => {
+      sendResponse({ isPremium: !!result.premium });
+    });
+    return true; // Will respond asynchronously
   } else if (request.action === 'headlineChanged') {
     // Remove loading badge when first headline changes
     chrome.action.setBadgeText({ tabId: sender.tab.id, text: '' });
     sendResponse({ status: 'badge cleared' });
     return;
+  } else if (request.action === 'checkDailyLimit') {
+    const today = new Date().toDateString();
+    chrome.storage.local.get(['dailyUsage'], (result) => {
+      try {
+        const dailyUsage = result.dailyUsage || {};
+        
+        // Clean up old dates
+        Object.keys(dailyUsage).forEach(date => {
+          if (date !== today) delete dailyUsage[date];
+        });
+
+        const todayCount = dailyUsage[today] || 0;
+        sendResponse({
+          canProceed: todayCount < DAILY_LIMIT,
+          count: todayCount,
+          reason: todayCount >= DAILY_LIMIT ? 'dailyLimit' : null
+        });
+      } catch (error) {
+        sendResponse({ error: error.message });
+      }
+    });
+    return true;
+  }
+  
+  if (request.action === 'incrementDailyCount') {
+    const today = new Date().toDateString();
+    chrome.storage.local.get(['dailyUsage'], (result) => {
+      try {
+        const dailyUsage = result.dailyUsage || {};
+        dailyUsage[today] = (dailyUsage[today] || 0) + 1;
+        
+        chrome.storage.local.set({ dailyUsage }, () => {
+          sendResponse({
+            limitReached: dailyUsage[today] >= DAILY_LIMIT,
+            count: dailyUsage[today]
+          });
+        });
+      } catch (error) {
+        sendResponse({ error: error.message });
+      }
+    });
+    return true;
+  }
+});
+
+const SUCCESS_URL_BASE = 'https://tsurdan.github.io/Just-News/success.html';
+const REQUIRED_TOKEN = 'e23de-32dd3-d2fg3fw-f34f3w';
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete') {
+    try {
+      const url = new URL(tab.url);
+      if (
+        url.origin + url.pathname === SUCCESS_URL_BASE &&
+        url.searchParams.get('checkout') === 'success' &&
+        url.searchParams.get('token') === REQUIRED_TOKEN
+      ) {
+        // Unlock premium and notify content scripts
+        chrome.storage.sync.set({ premium: true }, () => {
+          console.log('Premium unlocked via success page with token!');
+          // Broadcast to all content scripts
+          chrome.runtime.sendMessage({ 
+            action: 'premiumStatusChanged', 
+            isPremium: true 
+          });
+        });
+      }
+    } catch (e) {
+      // Invalid URL, ignore
+    }
   }
 });
 

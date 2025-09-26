@@ -387,4 +387,12 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   };
+
+  // Premium button click handler
+  const goPremiumBtn = document.getElementById('goPremiumBtn');
+  if (goPremiumBtn) {
+    goPremiumBtn.onclick = () => {
+      window.open("https://justnews.lemonsqueezy.com/buy/86f91e1c-1391-4f7b-b282-d30ead154372");
+    };
+  }
 });

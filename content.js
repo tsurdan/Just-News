@@ -1,9 +1,34 @@
+// TODO: enable custom modes feature only for premium users
+// TODO: update options page to freemium model
+// TODO: update all popups to freemium model
+
 let isInitialized = false;
 let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
+let isPremiumUser = false; // Track premium status
 
-function initializeContentScript() {
+// Function to initialize premium status - only called once during startup
+async function initializePremiumStatus() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'checkPremium' });
+    isPremiumUser = response.isPremium;
+    console.log('Premium status initialized:', isPremiumUser);
+  } catch (error) {
+    console.error('Error checking premium status:', error);
+    isPremiumUser = false;
+  }
+}
+
+// Sync function to check premium status - uses cached value
+function isPremium() {
+  return isPremiumUser;
+}
+
+async function initializeContentScript() {
   if (isInitialized) return;
+  
+  // Initialize premium status
+  await initializePremiumStatus();
   
   // Add tooltip styles to the page
   addTooltipStyles();
@@ -14,6 +39,11 @@ function initializeContentScript() {
       counter = 0;
       summarizeHeadlines();
       sendResponse({status: 'Processing started'});
+    } else if (request.action === 'premiumStatusChanged') {
+      // Update cached premium status when it changes
+      isPremiumUser = request.isPremium;
+      console.log('Premium status updated:', isPremiumUser);
+      sendResponse({status: 'premium status updated'});
     }
     return true;
   });
@@ -90,7 +120,19 @@ async function summarizeHeadlines() {
     await createNotification('Error checking API key. Please try again.');
   }
   const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt}; 
-  const limit = 20;
+  
+  // Check daily rate limit with background script
+  if (!isPremium()) {
+    const limitCheck = await chrome.runtime.sendMessage({ action: 'checkDailyLimit' });
+    if (!limitCheck.canProceed) {
+      if (limitCheck.reason === 'dailyLimit') {
+        await createNotification('Daily limit reached. Upgrade to premium for unlimited usage!');
+      }
+      return;
+    }
+  }
+
+  const limit = 20; // Maximum headlines per click (different from daily limit)
   let firstHeadlineChanged = false;
 
   // This function will be injected into the page
@@ -151,10 +193,18 @@ async function summarizeHeadlines() {
             const { headline: newHeadline, summary } = parseAIResponse(result);
             
             // Cache the summary for tooltip use
-            articleSummaries.set(articleUrl, summary);
-            
+            if (isPremium()) {
+              articleSummaries.set(articleUrl, summary);
+            }
+
             typeHeadline(headline, `~${newHeadline}`);
             counter++;
+
+            // Update daily count with background script
+            if (!isPremium()) {
+              chrome.runtime.sendMessage({ action: 'incrementDailyCount' }, (usage) => {});
+            }
+
             // Notify background to clear badge after first headline changes
             if (!firstHeadlineChanged) {
               firstHeadlineChanged = true;
@@ -312,7 +362,9 @@ function typeHeadline(element, text) {
     } else {
       clearInterval(interval);
       // Add tooltip functionality after typing is complete
-      setupTooltip(element);
+      if (isPremium()) {
+        setupTooltip(element);
+      }
     }
   }, 50); // Adjust typing speed by changing the interval time
 }
@@ -340,15 +392,13 @@ function setupTooltip(element) {
       tooltip.className = 'just-news-tooltip';
       
       // Get cached summary (should already be available from initial API call)
-      if (articleSummaries.has(articleUrl)) {
-        const summary = articleSummaries.get(articleUrl);
-        tooltip.textContent = summary;
-      } else {
-        tooltip.textContent = 'Summary unavailable';
-      }
-      
-      document.body.appendChild(tooltip);
-      
+        if (articleSummaries.has(articleUrl)) {
+          const summary = articleSummaries.get(articleUrl);
+          tooltip.textContent = summary;
+        } else {
+          tooltip.textContent = 'Summary unavailable';
+        }
+        document.body.appendChild(tooltip);
       // Position tooltip after a small delay to ensure it's rendered
       setTimeout(() => {
         positionTooltip(element, tooltip);
