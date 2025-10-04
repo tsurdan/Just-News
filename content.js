@@ -351,35 +351,15 @@ function parseAIResponse(result) {
 
 
 function typeHeadline(element, text) {
-  let index = 0;
+  // Ultra-simple approach: Just replace the text content instantly
+  // Exactly like manually editing textContent in dev tools
   
-  // Super simple approach: Replace text while preserving HTML structure
-  // Like manually editing in dev tools, but with typing animation
+  element.textContent = text;
   
-  const originalHTML = element.innerHTML;
-  const originalText = element.textContent.trim();
-  
-  // Clear the text content but keep the HTML structure
-  element.innerHTML = originalHTML.replace(originalText, '');
-  
-  // Find where to insert the new text (same location as original text)
-  const insertLocation = originalHTML.indexOf(originalText);
-  const beforeHTML = originalHTML.substring(0, insertLocation);
-  const afterHTML = originalHTML.substring(insertLocation + originalText.length);
-  
-  const interval = setInterval(() => {
-    if (index < text.length) {
-      const currentText = text.substring(0, index + 1);
-      element.innerHTML = beforeHTML + currentText + afterHTML;
-      index++;
-    } else {
-      clearInterval(interval);
-      // Add tooltip functionality after typing is complete
-      if (isPremium()) {
-        setupTooltip(element);
-      }
-    }
-  }, 50); // Adjust typing speed by changing the interval time
+  // Add tooltip functionality after replacement is complete
+  if (isPremium()) {
+    setupTooltip(element);
+  }
 }
 
 // Setup tooltip functionality for a processed headline
