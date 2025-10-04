@@ -90,7 +90,7 @@ function addTooltipStyles() {
 async function summarizeHeadlines() {
   let apiKey = "";
   let apiProvider = "groq";
-  let model = "gemma2-9b-it";
+  let model = "";
   let customPrompt = "";
   let systemPrompt = "";
   let preferedLang = "hebrew";
@@ -906,7 +906,6 @@ async function promptForApiKey(message, currentKey = '') {
       const apiKey = input.value.trim();
       if (apiKey) {
         await chrome.storage.sync.set({ apiKey });
-        document.body.removeChild(overlay);
         summarizeHeadlines();
         resolve(apiKey);
       } else {

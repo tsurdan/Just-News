@@ -5,7 +5,7 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
 
-const DAILY_LIMIT = 50;
+const DAILY_LIMIT = 30;
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -233,8 +233,8 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
         // Unlock premium and notify content scripts
         chrome.storage.sync.set({ premium: true }, () => {
           console.log('Premium unlocked via success page with token!');
-          // Broadcast to all content scripts
-          chrome.runtime.sendMessage({ 
+          // Send message only to the updated tab
+          chrome.tabs.sendMessage(tabId, { 
             action: 'premiumStatusChanged', 
             isPremium: true 
           });

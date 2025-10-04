@@ -29,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const defaultModels = {
     groq: 'gemma2-9b-it',
     openai: 'gpt-3.5-turbo',
-    claude: 'claude-3-opus<',
+    claude: 'claude-3-opus',
     gemini: 'gemini-1.5-flash-latest'
   };
 
