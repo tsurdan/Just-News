@@ -352,11 +352,37 @@ function parseAIResponse(result) {
 
 function typeHeadline(element, text) {
   let index = 0;
+  
+  // Store original styling - preserve classes, inline styles, and other attributes
+  const originalClasses = element.className;
+  const originalStyle = element.style.cssText;
+  const originalAttributes = {};
+  
+  // Store all attributes except href and text content related ones
+  for (let attr of element.attributes) {
+    if (attr.name !== 'href') {
+      originalAttributes[attr.name] = attr.value;
+    }
+  }
+  
+  // Clear only text content, not the entire element
   element.textContent = '';
+  
   const interval = setInterval(() => {
     if (index < text.length) {
       element.textContent += text[index];
       index++;
+      
+      // Ensure styling is preserved after each character addition
+      element.className = originalClasses;
+      element.style.cssText = originalStyle;
+      
+      // Restore other attributes if they were lost
+      for (let attrName in originalAttributes) {
+        if (element.getAttribute(attrName) !== originalAttributes[attrName]) {
+          element.setAttribute(attrName, originalAttributes[attrName]);
+        }
+      }
     } else {
       clearInterval(interval);
       // Add tooltip functionality after typing is complete
