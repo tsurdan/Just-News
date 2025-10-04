@@ -351,20 +351,15 @@ function parseAIResponse(result) {
 
 
 function typeHeadline(element, text) {
-  let index = 0;
-  element.textContent = '';
-  const interval = setInterval(() => {
-    if (index < text.length) {
-      element.textContent += text[index];
-      index++;
-    } else {
-      clearInterval(interval);
-      // Add tooltip functionality after typing is complete
-      if (isPremium()) {
-        setupTooltip(element);
-      }
-    }
-  }, 50); // Adjust typing speed by changing the interval time
+  // Ultra-simple approach: Just replace the text content instantly
+  // Exactly like manually editing textContent in dev tools
+  
+  element.textContent = text;
+  
+  // Add tooltip functionality after replacement is complete
+  if (isPremium()) {
+    setupTooltip(element);
+  }
 }
 
 // Setup tooltip functionality for a processed headline
