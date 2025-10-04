@@ -353,68 +353,24 @@ function parseAIResponse(result) {
 function typeHeadline(element, text) {
   let index = 0;
   
-  // Find the deepest text-containing element that has the main content
-  function findMainTextElement(element) {
-    // If element has only text nodes as direct children, use it
-    const hasOnlyTextNodes = Array.from(element.childNodes).every(
-      node => node.nodeType === Node.TEXT_NODE
-    );
-    
-    if (hasOnlyTextNodes && element.textContent.trim()) {
-      return element;
-    }
-    
-    // Look for common text container patterns
-    const textContainers = [
-      element.querySelector('span[class*="title"]'),
-      element.querySelector('span[class*="headline"]'), 
-      element.querySelector('span[class*="text"]'),
-      element.querySelector('span'),
-      element.querySelector('a'),
-    ].filter(Boolean);
-    
-    for (const container of textContainers) {
-      if (container && container.textContent.trim()) {
-        const hasOnlyTextNodes = Array.from(container.childNodes).every(
-          node => node.nodeType === Node.TEXT_NODE
-        );
-        if (hasOnlyTextNodes) {
-          return container;
-        }
-      }
-    }
-    
-    // Fallback: find the element with the most text content that has only text nodes
-    const allElements = [element, ...element.querySelectorAll('*')];
-    let bestElement = element;
-    let maxTextLength = 0;
-    
-    for (const el of allElements) {
-      const hasOnlyTextNodes = Array.from(el.childNodes).every(
-        node => node.nodeType === Node.TEXT_NODE
-      );
-      
-      if (hasOnlyTextNodes && el.textContent.trim().length > maxTextLength) {
-        maxTextLength = el.textContent.trim().length;
-        bestElement = el;
-      }
-    }
-    
-    return bestElement;
-  }
+  // Super simple approach: Replace text while preserving HTML structure
+  // Like manually editing in dev tools, but with typing animation
   
-  // Find the best element to replace text in
-  const targetElement = findMainTextElement(element);
+  const originalHTML = element.innerHTML;
+  const originalText = element.textContent.trim();
   
-  // Store original text for potential fallback
-  const originalText = targetElement.textContent;
+  // Clear the text content but keep the HTML structure
+  element.innerHTML = originalHTML.replace(originalText, '');
   
-  // Clear the target element's text content
-  targetElement.textContent = '';
+  // Find where to insert the new text (same location as original text)
+  const insertLocation = originalHTML.indexOf(originalText);
+  const beforeHTML = originalHTML.substring(0, insertLocation);
+  const afterHTML = originalHTML.substring(insertLocation + originalText.length);
   
   const interval = setInterval(() => {
     if (index < text.length) {
-      targetElement.textContent += text[index];
+      const currentText = text.substring(0, index + 1);
+      element.innerHTML = beforeHTML + currentText + afterHTML;
       index++;
     } else {
       clearInterval(interval);
