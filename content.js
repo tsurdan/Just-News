@@ -353,36 +353,69 @@ function parseAIResponse(result) {
 function typeHeadline(element, text) {
   let index = 0;
   
-  // Store original styling - preserve classes, inline styles, and other attributes
-  const originalClasses = element.className;
-  const originalStyle = element.style.cssText;
-  const originalAttributes = {};
-  
-  // Store all attributes except href and text content related ones
-  for (let attr of element.attributes) {
-    if (attr.name !== 'href') {
-      originalAttributes[attr.name] = attr.value;
+  // Find the deepest text-containing element that has the main content
+  function findMainTextElement(element) {
+    // If element has only text nodes as direct children, use it
+    const hasOnlyTextNodes = Array.from(element.childNodes).every(
+      node => node.nodeType === Node.TEXT_NODE
+    );
+    
+    if (hasOnlyTextNodes && element.textContent.trim()) {
+      return element;
     }
+    
+    // Look for common text container patterns
+    const textContainers = [
+      element.querySelector('span[class*="title"]'),
+      element.querySelector('span[class*="headline"]'), 
+      element.querySelector('span[class*="text"]'),
+      element.querySelector('span'),
+      element.querySelector('a'),
+    ].filter(Boolean);
+    
+    for (const container of textContainers) {
+      if (container && container.textContent.trim()) {
+        const hasOnlyTextNodes = Array.from(container.childNodes).every(
+          node => node.nodeType === Node.TEXT_NODE
+        );
+        if (hasOnlyTextNodes) {
+          return container;
+        }
+      }
+    }
+    
+    // Fallback: find the element with the most text content that has only text nodes
+    const allElements = [element, ...element.querySelectorAll('*')];
+    let bestElement = element;
+    let maxTextLength = 0;
+    
+    for (const el of allElements) {
+      const hasOnlyTextNodes = Array.from(el.childNodes).every(
+        node => node.nodeType === Node.TEXT_NODE
+      );
+      
+      if (hasOnlyTextNodes && el.textContent.trim().length > maxTextLength) {
+        maxTextLength = el.textContent.trim().length;
+        bestElement = el;
+      }
+    }
+    
+    return bestElement;
   }
   
-  // Clear only text content, not the entire element
-  element.textContent = '';
+  // Find the best element to replace text in
+  const targetElement = findMainTextElement(element);
+  
+  // Store original text for potential fallback
+  const originalText = targetElement.textContent;
+  
+  // Clear the target element's text content
+  targetElement.textContent = '';
   
   const interval = setInterval(() => {
     if (index < text.length) {
-      element.textContent += text[index];
+      targetElement.textContent += text[index];
       index++;
-      
-      // Ensure styling is preserved after each character addition
-      element.className = originalClasses;
-      element.style.cssText = originalStyle;
-      
-      // Restore other attributes if they were lost
-      for (let attrName in originalAttributes) {
-        if (element.getAttribute(attrName) !== originalAttributes[attrName]) {
-          element.setAttribute(attrName, originalAttributes[attrName]);
-        }
-      }
     } else {
       clearInterval(interval);
       // Add tooltip functionality after typing is complete
