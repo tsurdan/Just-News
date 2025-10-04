@@ -352,7 +352,28 @@ function parseAIResponse(result) {
 
 function typeHeadline(element, text) {
   let index = 0;
+  
+  // Store the original element's attributes and classes to preserve styling
+  const originalClasses = element.className;
+  const originalAttributes = {};
+  
+  // Preserve all original attributes
+  for (let i = 0; i < element.attributes.length; i++) {
+    const attr = element.attributes[i];
+    originalAttributes[attr.name] = attr.value;
+  }
+  
+  // Clear content but preserve element structure
   element.textContent = '';
+  
+  // Restore original attributes and classes after clearing content
+  element.className = originalClasses;
+  for (const [name, value] of Object.entries(originalAttributes)) {
+    if (name !== 'class') { // className is already restored above
+      element.setAttribute(name, value);
+    }
+  }
+  
   const interval = setInterval(() => {
     if (index < text.length) {
       element.textContent += text[index];
