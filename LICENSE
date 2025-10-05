@@ -1,21 +1,27 @@
-MIT License
+Just News Extension License
 
 Copyright (c) 2025 tsurdan
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights  
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell  
-copies of the Software, and to permit persons to whom the Software is  
-furnished to do so, subject to the following conditions:
+## Permitted Uses
+Permission is hereby granted to any person obtaining a copy of this software and associated documentation files (the "Software") to:
+- View, study, and examine the source code for educational purposes
+- Fork the repository for contributing improvements via pull requests
+- Use the code as reference for learning Chrome extension development
+- Report bugs and suggest features through the official repository
 
-The above copyright notice and this permission notice shall be included in  
-all copies or substantial portions of the Software.
+## Restrictions
+The following actions are NOT permitted without explicit written permission from the copyright holder:
+- Distribute, publish, or deploy modified or unmodified copies of this extension
+- Upload this extension or derivatives to any web store or distribution platform
+- Use this code commercially or in commercial products
+- Bypass, modify, or remove the freemium model, premium features, or usage limits
+- Create competing extensions based on this code
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR  
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,  
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE  
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER  
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,  
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN  
-THE SOFTWARE.
+## Contributions
+Contributions to the official repository are welcome and encouraged. By contributing, you agree that your contributions will be licensed under the same terms as this project.
+
+## Commercial Use
+For commercial licensing or permission to distribute modified versions, please contact the copyright holder.
+
+## Disclaimer
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
