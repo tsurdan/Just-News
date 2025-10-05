@@ -125,7 +125,7 @@ async function summarizeHeadlines() {
     const limitCheck = await chrome.runtime.sendMessage({ action: 'checkDailyLimit' });
     if (!limitCheck.canProceed) {
       if (limitCheck.reason === 'dailyLimit') {
-        await createNotification('Daily limit reached. \n\nUpgrade to premium for unlimited usage!');
+        await createNotification('Daily limit reached. \n\nTo remove the limit, upgrade to premium!');
       }
       return;
     }
@@ -949,7 +949,7 @@ function createNotificationPrompt(message) {
   `;
 
   // Add upgrade button only for daily limit message
-  if (message === "Daily limit reached. \n\nUpgrade to premium for unlimited usage!") {
+  if (message === "Daily limit reached. \n\nTo remove the limit, upgrade to premium!") {
     const upgradeButton = document.createElement('a');
     upgradeButton.href = 'https://tsurdan.github.io/Just-News/premium.html';
     upgradeButton.target = '_blank';
