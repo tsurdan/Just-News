@@ -89,12 +89,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const defaultSystemPrompt = characterConfigs.robot.systemPrompt;
   const defaultPrompt = characterConfigs.robot.userPrompt;
 
-  let isPremiumUser = false;
+  let ipu = false;
 
   // Load saved settings
   chrome.storage.sync.get(['apiProvider', 'apiKey', 'customPrompt', 'systemPrompt', 'characterMode', 'modifiedPrompts', 'premium', 'preferedLang'], (data) => {
-    isPremiumUser = !!data.premium;
-    updatePremiumUI(isPremiumUser);
+    ipu = !!data.premium;
+    updatePremiumUI(ipu);
     if (data.preferedLang) {
       preferedLang.value = data.preferedLang;
     } else {
@@ -162,9 +162,9 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Check premium status and update UI accordingly
-  function updatePremiumUI(isPremium) {
+  function updatePremiumUI(ipb) {
     const characterModesContainer = document.getElementById('characterModes');
-    if (isPremium) {
+    if (ipb) {
       characterModesContainer.classList.add('premium-unlocked');
       document.querySelectorAll('.premium-mode').forEach(mode => {
         mode.classList.remove('premium-mode');
@@ -179,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const premiumContainer = document.querySelector('.premium-modes-container');
   if (premiumContainer) {
     premiumContainer.addEventListener('click', (e) => {
-      if (!isPremiumUser) {
+      if (!ipu) {
         // Prevent event bubbling
         e.stopPropagation();
         window.open("https://tsurdan.github.io/Just-News/premium.html");
@@ -193,7 +193,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const clickedMode = mode.dataset.mode;
       
       // Check if free user trying to use premium mode
-      if (!isPremiumUser && clickedMode !== 'robot') {
+      if (!ipu && clickedMode !== 'robot') {
         // Redirect to premium purchase
         window.open("https://tsurdan.github.io/Just-News/premium.html");
         return;

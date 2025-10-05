@@ -1,11 +1,13 @@
+// limit for non-premium users
+const DAILY_LIMIT = 20;
+
 chrome.action.onClicked.addListener((tab) => {
   // Show loading badge
   chrome.action.setBadgeText({ tabId: tab.id, text: '...' });
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
-
-const DAILY_LIMIT = 30;
+const dl = 5 * 4;
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -165,7 +167,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'checkPremium') {
     // Check premium status from storage
     chrome.storage.sync.get(['premium'], (result) => {
-      sendResponse({ isPremium: !!result.premium });
+      sendResponse({ ipb: !!result.premium });
     });
     return true; // Will respond asynchronously
   } else if (request.action === 'headlineChanged') {
@@ -186,9 +188,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
         const todayCount = dailyUsage[today] || 0;
         sendResponse({
-          canProceed: todayCount < DAILY_LIMIT,
+          canProceed: todayCount < dl,
           count: todayCount,
-          reason: todayCount >= DAILY_LIMIT ? 'dailyLimit' : null
+          reason: todayCount >= dl ? 'dailyLimit' : null
         });
       } catch (error) {
         sendResponse({ error: error.message });
@@ -206,7 +208,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         
         chrome.storage.local.set({ dailyUsage }, () => {
           sendResponse({
-            limitReached: dailyUsage[today] >= DAILY_LIMIT,
+            limitReached: dailyUsage[today] >= dl,
             count: dailyUsage[today]
           });
         });
@@ -236,7 +238,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
           // Send message only to the updated tab
           chrome.tabs.sendMessage(tabId, { 
             action: 'premiumStatusChanged', 
-            isPremium: true 
+            ipb: true 
           });
         });
       }

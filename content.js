@@ -1,23 +1,24 @@
+let premium = false; // Track premium status
 let isInitialized = false;
 let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
-let isPremiumUser = false; // Track premium status
+let ipu = false;
 
 // Function to initialize premium status - only called once during startup
 async function initializePremiumStatus() {
   try {
     const response = await chrome.runtime.sendMessage({ action: 'checkPremium' });
-    isPremiumUser = response.isPremium;
-    console.log('Premium status initialized:', isPremiumUser);
+    ipu = response.ipb;
+    console.log('Premium status initialized:', ipu);
   } catch (error) {
     console.error('Error checking premium status:', error);
-    isPremiumUser = false;
+    ipu = false;
   }
 }
 
 // Sync function to check premium status - uses cached value
-function isPremium() {
-  return isPremiumUser;
+function ipb() {
+  return ipu;
 }
 
 async function initializeContentScript() {
@@ -37,8 +38,8 @@ async function initializeContentScript() {
       sendResponse({status: 'Processing started'});
     } else if (request.action === 'premiumStatusChanged') {
       // Update cached premium status when it changes
-      isPremiumUser = request.isPremium;
-      console.log('Premium status updated:', isPremiumUser);
+      ipu = request.ipb;
+      console.log('Premium status updated:', ipu);
       sendResponse({status: 'premium status updated'});
     }
     return true;
@@ -120,7 +121,7 @@ async function summarizeHeadlines() {
   const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
   
   // Check daily rate limit with background script
-  if (!isPremium()) {
+  if (!ipb()) {
     const limitCheck = await chrome.runtime.sendMessage({ action: 'checkDailyLimit' });
     if (!limitCheck.canProceed) {
       if (limitCheck.reason === 'dailyLimit') {
@@ -159,24 +160,12 @@ async function summarizeHeadlines() {
     const style = window.getComputedStyle(headline);
     
     // Check if headline is at least partially visible in viewport
-    // rect.bottom > 0: bottom edge is below viewport top
-    // rect.top < window.innerHeight: top edge is above viewport bottom
     if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
       return false;
     }
     
     // Check if element is hidden via CSS
-    if (style.display === 'none' || style.visibility === 'hidden') {
-      return false;
-    }
-    
-    // Check if element has zero opacity (completely transparent)
-    if (parseFloat(style.opacity) === 0) {
-      return false;
-    }
-    
-    // Check if element has zero dimensions (collapsed or hidden)
-    if (rect.width === 0 || rect.height === 0) {
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0 || rect.width === 0 || rect.height === 0) {
       return false;
     }
     
@@ -209,7 +198,7 @@ async function summarizeHeadlines() {
             const { headline: newHeadline, summary } = parseAIResponse(result);
             
             // Cache the summary for tooltip use
-            if (isPremium()) {
+            if (ipb()) {
               articleSummaries.set(articleUrl, summary);
             }
 
@@ -217,7 +206,7 @@ async function summarizeHeadlines() {
             counter++;
 
             // Update daily count with background script
-            if (!isPremium()) {
+            if (!ipb()) {
               chrome.runtime.sendMessage({ action: 'incrementDailyCount' }, (usage) => {});
             }
 
@@ -378,7 +367,7 @@ function typeHeadline(element, text) {
     } else {
       clearInterval(interval);
       // Add tooltip functionality after typing is complete
-      if (isPremium()) {
+      if (ipb()) {
         setupTooltip(element);
       }
     }
@@ -602,68 +591,198 @@ function createApiKeyPrompt(message, currentKey = '') {
     z-index: 10000;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     backdrop-filter: blur(3px);
+    direction: ltr;
   `;
 
   const promptBox = document.createElement('div');
   promptBox.style.cssText = `
     background: white;
-    padding: 28px 24px;
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    padding: 32px 28px;
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
     width: 90%;
-    max-width: 400px;
+    max-width: 480px;
     box-sizing: border-box;
     animation: slideIn 0.3s ease;
+    max-height: 90vh;
+    overflow-y: auto;
+    direction: ltr;
+    text-align: left;
   `;
 
   const title = document.createElement('h3');
-  title.textContent = message;
+  title.textContent = '🚀 Quick Free Setup Required';
   title.style.cssText = `
     text-align: center;
-    font-size: 16px;
+    font-size: 18px;
+    color: #333;
+    font-weight: 700;
+    margin-bottom: 16px;
+    line-height: 1.3;
+  `;
+
+  const stepsContainer = document.createElement('div');
+  stepsContainer.style.cssText = `
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #4285F4;
+    direction: ltr;
+  `;
+
+  // Create step 1 - Sign up (clickable)
+  const step1 = document.createElement('a');
+  step1.href = 'https://console.groq.com/';
+  step1.target = '_blank';
+  step1.style.cssText = `
+    display: flex;
+    align-items: start;
+    font-size: 14px;
+    color: #333;
+    direction: ltr;
+    text-decoration: none;
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    background: rgba(66, 133, 244, 0.05);
+    border: 2px solid rgba(66, 133, 244, 0.2);
+    box-shadow: 0 2px 4px rgba(66, 133, 244, 0.1);
+  `;
+  
+  step1.innerHTML = `
+    <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">1</span>
+    <div style="flex: 1;">
+      <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Sign up to Groq AI</div>
+      <div style="font-size: 12px; color: #666;">Create your free account • Click to open</div>
+    </div>
+    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">→</span>
+  `;
+
+  step1.onmouseover = () => {
+    step1.style.background = 'rgba(66, 133, 244, 0.1)';
+    step1.style.borderColor = '#4285F4';
+    step1.style.transform = 'translateY(-2px)';
+    step1.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.2)';
+  };
+  step1.onmouseout = () => {
+    step1.style.background = 'rgba(66, 133, 244, 0.05)';
+    step1.style.borderColor = 'rgba(66, 133, 244, 0.2)';
+    step1.style.transform = 'translateY(0)';
+    step1.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
+  };
+
+  // Create step 2 - Generate key (clickable)
+  const step2 = document.createElement('a');
+  step2.href = 'https://console.groq.com/keys';
+  step2.target = '_blank';
+  step2.style.cssText = `
+    display: flex;
+    align-items: start;
+    font-size: 14px;
+    color: #333;
+    direction: ltr;
+    text-decoration: none;
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    background: rgba(66, 133, 244, 0.05);
+    border: 2px solid rgba(66, 133, 244, 0.2);
+    box-shadow: 0 2px 4px rgba(66, 133, 244, 0.1);
+  `;
+  
+  step2.innerHTML = `
+    <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">2</span>
+    <div style="flex: 1;">
+      <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Generate your key</div>
+      <div style="font-size: 12px; color: #666;">Create your API key • Click to open</div>
+    </div>
+    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">→</span>
+  `;
+
+  step2.onmouseover = () => {
+    step2.style.background = 'rgba(66, 133, 244, 0.1)';
+    step2.style.borderColor = '#4285F4';
+    step2.style.transform = 'translateY(-2px)';
+    step2.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.2)';
+  };
+  step2.onmouseout = () => {
+    step2.style.background = 'rgba(66, 133, 244, 0.05)';
+    step2.style.borderColor = 'rgba(66, 133, 244, 0.2)';
+    step2.style.transform = 'translateY(0)';
+    step2.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
+  };
+
+  // Create step 3 - Paste key (non-clickable)
+  const step3 = document.createElement('div');
+  step3.style.cssText = `
+    display: flex;
+    align-items: start;
+    font-size: 14px;
+    color: #333;
+    direction: ltr;
+    margin-bottom: 0;
+    padding: 12px;
+    border-radius: 8px;
+    background: rgba(76, 175, 80, 0.05);
+    border: 2px solid rgba(76, 175, 80, 0.2);
+  `;
+  
+  step3.innerHTML = `
+    <span style="background: #4CAF50; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);">3</span>
+    <div style="flex: 1;">
+      <div style="font-weight: 600; color: #4CAF50; margin-bottom: 2px;">Paste your key</div>
+      <div style="font-size: 12px; color: #666;">Enter your key in the field below</div>
+    </div>
+  `;
+
+  stepsContainer.appendChild(step1);
+  stepsContainer.appendChild(step2);
+  stepsContainer.appendChild(step3);
+
+  const inputLabel = document.createElement('label');
+  inputLabel.textContent = 'Paste your key here:';
+  inputLabel.style.cssText = `
+    display: block;
+    font-size: 14px;
     color: #333;
     font-weight: 600;
-    margin-bottom: 20px;
-    line-height: 1.4;
+    margin-bottom: 8px;
+    direction: ltr;
+    text-align: left;
   `;
-
-  const linkToGenerateKey = document.createElement('a');
-  linkToGenerateKey.textContent = 'Generate key here';
-  linkToGenerateKey.href = 'https://console.groq.com/keys';
-  linkToGenerateKey.target = '_blank';
-  linkToGenerateKey.style.cssText = `
-    margin-bottom: 20px;
-    color: #4285F4;
-    text-decoration: none;
-    text-align: center;
-    font-size: 14px;
-    display: block;
-    transition: all 0.2s ease;
-  `;
-
-  linkToGenerateKey.onmouseover = () => {
-    linkToGenerateKey.style.color = '#1a73e8';
-    linkToGenerateKey.style.transform = 'translateY(-1px)';
-  };
-  linkToGenerateKey.onmouseout = () => {
-    linkToGenerateKey.style.color = '#4285F4';
-    linkToGenerateKey.style.transform = 'translateY(0)';
-  };
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentKey;
-  input.placeholder = 'Enter your key';
+  input.placeholder = 'gsk...';
   input.style.cssText = `
     width: 100%;
     padding: 12px;
-    margin-bottom: 20px;
+    margin-bottom: 8px;
     border: 2px solid #e0e0e0;
     border-radius: 8px;
     box-sizing: border-box;
     font-size: 14px;
     transition: all 0.2s ease;
     outline: none;
+    font-family: monospace;
+    direction: ltr;
+    text-align: left;
+  `;
+
+  const helpText = document.createElement('p');
+  helpText.textContent = 'Your key is safe and stored locally';
+  helpText.style.cssText = `
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 20px;
+    text-align: center;
+    font-style: italic;
   `;
 
   input.onfocus = () => {
@@ -733,8 +852,10 @@ function createApiKeyPrompt(message, currentKey = '') {
   buttonContainer.appendChild(cancelButton);
   
   promptBox.appendChild(title);
-  promptBox.appendChild(linkToGenerateKey);
+  promptBox.appendChild(stepsContainer);
+  promptBox.appendChild(inputLabel);
   promptBox.appendChild(input);
+  promptBox.appendChild(helpText);
   promptBox.appendChild(buttonContainer);
   overlay.appendChild(promptBox);
 
@@ -932,7 +1053,11 @@ async function promptForApiKey(message, currentKey = '') {
     };
 
     cancelButton.onclick = () => {
-      document.body.removeChild(overlay);
+      try {
+        document.body.removeChild(overlay);
+      } catch (error) {
+        // Ignore if already removed
+      }
       resolve(null);
     };
   });
