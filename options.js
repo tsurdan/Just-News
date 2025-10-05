@@ -164,14 +164,41 @@ document.addEventListener('DOMContentLoaded', () => {
   // Check premium status and update UI accordingly
   function updatePremiumUI(ipb) {
     const characterModesContainer = document.getElementById('characterModes');
+    
+    // Get custom prompt elements
+    const systemPromptLabel = document.querySelector('label[for="systemPrompt"]');
+    const systemPromptTextarea = document.getElementById('systemPrompt');
+    const systemPromptCounter = document.getElementById('systemPromptCounter');
+    const customPromptLabel = document.querySelector('label[for="customPrompt"]');
+    const customPromptTextarea = document.getElementById('customPrompt');
+    const customPromptCounter = document.getElementById('customPromptCounter');
+    
     if (ipb) {
+      // Premium user - show everything
       characterModesContainer.classList.add('premium-unlocked');
       document.querySelectorAll('.premium-mode').forEach(mode => {
         mode.classList.remove('premium-mode');
         mode.removeAttribute('data-premium');
       });
+      
+      // Show custom prompt fields
+      if (systemPromptLabel) systemPromptLabel.style.display = 'block';
+      if (systemPromptTextarea) systemPromptTextarea.style.display = 'block';
+      if (systemPromptCounter) systemPromptCounter.style.display = 'block';
+      if (customPromptLabel) customPromptLabel.style.display = 'block';
+      if (customPromptTextarea) customPromptTextarea.style.display = 'block';
+      if (customPromptCounter) customPromptCounter.style.display = 'block';
     } else {
+      // Non-premium user - hide custom prompts
       characterModesContainer.classList.remove('premium-unlocked');
+      
+      // Hide custom prompt fields
+      if (systemPromptLabel) systemPromptLabel.style.display = 'none';
+      if (systemPromptTextarea) systemPromptTextarea.style.display = 'none';
+      if (systemPromptCounter) systemPromptCounter.style.display = 'none';
+      if (customPromptLabel) customPromptLabel.style.display = 'none';
+      if (customPromptTextarea) customPromptTextarea.style.display = 'none';
+      if (customPromptCounter) customPromptCounter.style.display = 'none';
     }
   }
 

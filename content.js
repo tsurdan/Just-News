@@ -11,7 +11,7 @@ async function initializePremiumStatus() {
     ipu = response.ipb;
     console.log('Premium status initialized:', ipu);
   } catch (error) {
-    console.error('Error checking premium status:', error);
+    console.log('Error checking premium status:', error);
     ipu = false;
   }
 }
@@ -905,6 +905,7 @@ function createNotificationPrompt(message) {
     z-index: 10000;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     backdrop-filter: blur(3px);
+    direction: ltr;
   `;
 
   const promptBox = document.createElement('div');
@@ -921,6 +922,8 @@ function createNotificationPrompt(message) {
     display: flex;
     flex-direction: column;
     justify-content: center;
+    direction: ltr;
+    text-align: left;
   `;
 
   const title = document.createElement('h3');
@@ -933,11 +936,13 @@ function createNotificationPrompt(message) {
     line-height: 1.6;
     font-weight: normal;
     white-space: pre-line;
+    direction: ltr;
   `;
 
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = `
     display: flex;
+    direction: ltr;
     justify-content: center;
     align-items: center;
     gap: 12px;
@@ -963,29 +968,32 @@ function createNotificationPrompt(message) {
       animation: gradientShift 8s linear infinite;
       text-decoration: none;
       cursor: pointer;
+      direction: ltr;
     `;
 
     const upgradeSpan = document.createElement('span');
     upgradeSpan.textContent = 'Upgrade to Premium';
     upgradeSpan.style.cssText = `
       display: block;
-      background: white;
-      color: #6200EE;
+      background: transparent;
+      color: white;
       padding: 10px 20px;
       border-radius: 28px;
       font-size: 14px;
       font-weight: 600;
       transition: all 0.3s ease;
+      direction: ltr;
+      text-align: center;
     `;
 
     upgradeButton.appendChild(upgradeSpan);
     upgradeButton.onmouseover = () => {
-      upgradeSpan.style.background = 'transparent';
-      upgradeSpan.style.color = 'white';
-    };
-    upgradeButton.onmouseout = () => {
       upgradeSpan.style.background = 'white';
       upgradeSpan.style.color = '#6200EE';
+    };
+    upgradeButton.onmouseout = () => {
+      upgradeSpan.style.background = 'transparent';
+      upgradeSpan.style.color = 'white';
     };
     buttonContainer.appendChild(upgradeButton);
   }
@@ -1002,6 +1010,7 @@ function createNotificationPrompt(message) {
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
+    direction: ltr;
   `;
 
   cancelButton.onmouseover = () => {

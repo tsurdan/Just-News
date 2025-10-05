@@ -244,6 +244,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       }
     } catch (e) {
       // Invalid URL, ignore
+      console.log('Invalid URL in tab update:', e.message);
     }
   }
 });
