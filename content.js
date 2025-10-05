@@ -153,16 +153,13 @@ async function summarizeHeadlines() {
     return true;
   });
 
-  // Filter out headlines that are not in the user's screen frame
-  const viewportHeight = window.innerHeight;
-  const viewportTop = window.scrollY // Maybe Add extra space to the frame?
-  const viewportBottom = viewportTop + viewportHeight
-
+  // Filter out headlines that are not visible in the viewport
   headlines = headlines.filter(headline => {
     const rect = headline.getBoundingClientRect();
-    const headlineTop = rect.top + window.scrollY;
-    const headlineBottom = rect.bottom + window.scrollY;
-    return (headlineTop >= viewportTop && headlineBottom <= viewportBottom);
+    // Check if headline is at least partially visible in viewport
+    // rect.bottom > 0: bottom edge is below viewport top
+    // rect.top < window.innerHeight: top edge is above viewport bottom
+    return (rect.bottom > 0 && rect.top < window.innerHeight);
   });
 
   // Filter out subject headlines
