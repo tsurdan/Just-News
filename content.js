@@ -156,10 +156,31 @@ async function summarizeHeadlines() {
   // Filter out headlines that are not visible in the viewport
   headlines = headlines.filter(headline => {
     const rect = headline.getBoundingClientRect();
+    const style = window.getComputedStyle(headline);
+    
     // Check if headline is at least partially visible in viewport
     // rect.bottom > 0: bottom edge is below viewport top
     // rect.top < window.innerHeight: top edge is above viewport bottom
-    return (rect.bottom > 0 && rect.top < window.innerHeight);
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
+      return false;
+    }
+    
+    // Check if element is hidden via CSS
+    if (style.display === 'none' || style.visibility === 'hidden') {
+      return false;
+    }
+    
+    // Check if element has zero opacity (completely transparent)
+    if (parseFloat(style.opacity) === 0) {
+      return false;
+    }
+    
+    // Check if element has zero dimensions (collapsed or hidden)
+    if (rect.width === 0 || rect.height === 0) {
+      return false;
+    }
+    
+    return true;
   });
 
   // Filter out subject headlines
