@@ -717,33 +717,9 @@ function createApiKeyPrompt(message, currentKey = '') {
     step2.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
   };
 
-  // Create step 3 - Paste key (non-clickable)
-  const step3 = document.createElement('div');
-  step3.style.cssText = `
-    display: flex;
-    align-items: start;
-    font-size: 14px;
-    color: #333;
-    direction: ltr;
-    margin-bottom: 0;
-    padding: 12px;
-    border-radius: 8px;
-    background: rgba(76, 175, 80, 0.05);
-    border: 2px solid rgba(76, 175, 80, 0.2);
-  `;
-  
-  step3.innerHTML = `
-    <span style="background: #4CAF50; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(76, 175, 80, 0.3);">3</span>
-    <div style="flex: 1;">
-      <div style="font-weight: 600; color: #4CAF50; margin-bottom: 2px;">Paste your key</div>
-      <div style="font-size: 12px; color: #666;">Enter your key in the field below</div>
-    </div>
-  `;
-
   stepsContainer.appendChild(step1);
   stepsContainer.appendChild(step2);
-  stepsContainer.appendChild(step3);
-
+  
   const inputLabel = document.createElement('label');
   inputLabel.textContent = 'Paste your key here:';
   inputLabel.style.cssText = `
