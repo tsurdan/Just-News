@@ -28,9 +28,17 @@
 
 ## 📋 Features
 
+### Free Version
 - Clean, informative, non-clickbait headlines
-- Multi-language support
+- Multi-language support  
 - Lightweight and fast
+- Daily usage limit
+
+### Premium Version
+- Unlimited daily usage
+- Multiple rewriting modes (Cynic, Optimist, Conspirator)
+- Custom prompt modes
+- Summarization on hover
 
 ---
 
@@ -41,8 +49,9 @@ Just News is designed with privacy in mind:
 - No tracking
 - No ads
 - No personal data collection
-- Article content is sent only to Groq's API for headline rewriting
-- Your API key is stored **only in your browser's local storage**
+- Article content is sent only to selected LLM API for headline rewriting
+- Your API key and premium status are stored **only in your browser's local storage**
+- Usage counters for free tier limits are tracked locally only
 
 For more details check the `privacy policy.md` file
 

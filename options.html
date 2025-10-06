@@ -18,34 +18,34 @@
       background: #ffffff;
       border-radius: 12px;
       box-shadow: 0 8px 32px rgba(66, 133, 244, 0.3);
-      padding: 32px;
+      padding: 24px;
       min-width: 450px;
       max-width: 600px;
       width: 80vw;
-      max-height: 95vh;
+      max-height: 90vh;
       overflow-y: auto;
     }
     h2 {
-      margin: 0 0 16px 0;
-      font-size: 1.6em;
+      margin: 0 0 12px 0;
+      font-size: 1.4em;
       color: #4285F4;
       text-align: center;
       font-weight: 600;
       letter-spacing: -0.3px;
     }
     label {
-      font-size: 1em;
+      font-size: 0.9em;
       color: #4285F4;
-      margin: 16px 0 6px 0;
+      margin: 12px 0 4px 0;
       font-weight: 600;
       display: block;
     }
     input[type="text"], select, textarea {
       width: 100%;
-      padding: 12px 14px;
+      padding: 8px 12px;
       border: 1px solid #4285F4;
       border-radius: 6px;
-      font-size: 1em;
+      font-size: 0.95em;
       margin-bottom: 6px;
       box-sizing: border-box;
       background: #ffffff;
@@ -152,7 +152,7 @@
       box-shadow: 0 0 0 2px rgba(66, 133, 244, 0.2);
     }
     textarea {
-      min-height: 60px;
+      min-height: 50px;
       resize: vertical;
       line-height: 1.3;
     }
@@ -224,56 +224,262 @@
       min-width: 60px;
     }
     
-    /* Character Mode Styles */
+    /* Modern Character Modes Layout */
     #characterModes {
       display: grid;
-      grid-template-columns: repeat(5, 1fr);
-      gap: 6px;
-      margin: 12px 0 16px 0;
+      grid-template-columns: 120px 1fr;
+      gap: 16px;
+      margin: 8px 0 12px 0;
+      padding: 0;
     }
-    .character-mode {
+
+    /* Free Robot Mode Styling */
+    .character-mode[data-mode="robot"] {
+      background: white;
+      border: 2px solid transparent;
+      border-radius: 12px;
+      padding: 16px 12px;
       display: flex;
       flex-direction: column;
       align-items: center;
-      padding: 8px 4px;
-      border: 1px solid #4285F4;
-      border-radius: 8px;
       cursor: pointer;
       transition: all 0.3s ease;
-      background: #ffffff;
-      text-align: center;
+      position: relative;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
     }
-    .character-mode:hover {
-      border-color: #1a73e8;
+
+    .character-mode[data-mode="robot"]:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
       background: #f8f9ff;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 12px rgba(66, 133, 244, 0.2);
     }
-    .character-mode.selected {
-      border-color: #4285F4;
+
+    .character-mode[data-mode="robot"].selected {
       background: #4285F4;
-      color: white;
-      transform: translateY(-1px);
-      box-shadow: 0 4px 16px rgba(66, 133, 244, 0.4);
+      border-color: transparent;
+      box-shadow: 0 8px 20px rgba(66, 133, 244, 0.4);
+      transform: translateY(-2px);
     }
-    .character-icon {
-      width: 36px;
-      height: 36px;
-      margin-bottom: 4px;
-      object-fit: contain;
+
+    .character-mode[data-mode="robot"] .character-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 8px;
       transition: all 0.3s ease;
+      filter: none;
     }
-    .character-mode.selected .character-icon {
+
+    .character-mode[data-mode="robot"].selected .character-icon {
       filter: brightness(0) invert(1);
     }
-    .character-name {
-      font-size: 0.75em;
+
+    .character-mode[data-mode="robot"] .character-name {
+      color: #333;
       font-weight: 600;
-      color: #4285F4;
-      line-height: 1.1;
+      font-size: 0.8em;
+      transition: all 0.3s ease;
     }
-    .character-mode.selected .character-name {
-      color: #ffffff;
+
+    .character-mode[data-mode="robot"].selected .character-name {
+      color: white;
+    }
+
+    /* Premium Modes Container */
+    .premium-modes-container {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 2px;
+      background: linear-gradient(135deg, 
+        #8A2BE2 0%,
+        #58CC02 25%,
+        #6200EE 50%,
+        #58CC02 75%,
+        #8A2BE2 100%
+      );
+      background-size: 300% 300%;
+      animation: gradient-shift 8s ease infinite;
+      border-radius: 12px;
+      padding: 2px;
+      box-shadow: 
+        0 8px 30px rgba(98, 0, 238, 0.25),
+        inset 0 0 20px rgba(255, 255, 255, 0.2);
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    @keyframes gradient-shift {
+      0% { background-position: 0% 50% }
+      50% { background-position: 100% 50% }
+      100% { background-position: 0% 50% }
+    }
+
+    /* Magic sparkle effect */
+    .premium-modes-container::after {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(
+        circle at center,
+        rgba(255, 255, 255, 0.1) 0%,
+        rgba(255, 255, 255, 0.05) 20%,
+        transparent 60%
+      );
+      animation: rotate 10s linear infinite;
+      pointer-events: none;
+    }
+
+    @keyframes rotate {
+      0% { transform: rotate(0deg) }
+      100% { transform: rotate(360deg) }
+    }
+
+    /* Premium Overlay */
+    .premium-modes-container::before {
+      content: "Upgrade to Premium";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, #58CC02, #28A745);
+      color: white;
+      font-size: 1em;
+      font-weight: 700;
+      padding: 12px 30px;
+      border-radius: 30px;
+      box-shadow: 
+        0 4px 20px rgba(88, 204, 2, 0.4),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+      z-index: 3;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      white-space: nowrap;
+      transition: all 0.3s ease;
+      backdrop-filter: blur(5px);
+    }
+
+    .premium-modes-container:hover::before {
+      transform: translate(-50%, -50%) scale(1.05);
+      box-shadow: 
+        0 6px 25px rgba(88, 204, 2, 0.5),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+      background: linear-gradient(135deg, #66E00F, #2EBD4E);
+    }
+
+    /* Premium Character Mode Styling */
+    .character-mode:not([data-mode="robot"]) {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px 12px;
+      background: transparent;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-radius: 0;
+    }
+    
+    /* Fix corner rounding */
+    .premium-modes-container .character-mode[data-mode="cynic"] {
+      border-top-left-radius: 10px;
+    }
+    .premium-modes-container .character-mode[data-mode="optimist"] {
+      border-top-right-radius: 10px;
+    }
+    .premium-modes-container .character-mode[data-mode="conspirator"] {
+      border-bottom-left-radius: 10px;
+    }
+    .premium-modes-container .character-mode[data-mode="custom"] {
+      border-bottom-right-radius: 10px;
+    }
+
+    .character-mode:not([data-mode="robot"]) .character-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 8px;
+      filter: brightness(0) invert(1);
+      opacity: 0.9;
+      transition: all 0.3s ease;
+    }
+
+    .character-mode:not([data-mode="robot"]) .character-name {
+      color: white;
+      font-weight: 600;
+      font-size: 0.8em;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+    }
+
+    /* Premium Hover Effects */
+    .character-mode:not([data-mode="robot"]):hover {
+      background: rgba(255, 255, 255, 0.15);
+    }
+
+    .character-mode:not([data-mode="robot"]):hover .character-icon {
+      transform: scale(1.1);
+      opacity: 1;
+    }
+
+    /* Premium Unlocked State */
+    .premium-unlocked .premium-modes-container::before {
+      display: none;
+    }
+
+    .premium-unlocked .premium-modes-container {
+      background: white;
+      animation: none;
+    }
+
+    .premium-unlocked .premium-modes-container::after {
+      display: none;
+    }
+
+    .premium-unlocked .character-mode:not([data-mode="robot"]) {
+      background: white;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      border-radius: 12px;
+      margin: 2px;
+    }
+
+    .premium-unlocked .character-mode:not([data-mode="robot"]) .character-icon {
+      filter: none;
+      opacity: 1;
+    }
+
+    .premium-unlocked .character-mode:not([data-mode="robot"]) .character-name {
+      color: #333;
+      text-shadow: none;
+    }
+
+    .premium-unlocked .character-mode:not([data-mode="robot"]):hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+      background: #f8f9ff;
+    }
+
+    .premium-unlocked .character-mode:not([data-mode="robot"]).selected {
+      background: #4285F4;
+      color: white;
+    }
+
+    .premium-unlocked .character-mode:not([data-mode="robot"]).selected .character-icon {
+      filter: brightness(0) invert(1);
+    }
+
+    .premium-unlocked .character-mode:not([data-mode="robot"]).selected .character-name {
+      color: white;
+    }
+
+
+    @media (max-width: 600px) {
+      #characterModes {
+        grid-template-columns: 1fr;
+      }
+      .premium-modes-container {
+        grid-template-columns: repeat(2, 1fr);
+      }
     }
     
     /* API Key Links */
@@ -369,33 +575,53 @@
     </div>
     <label for="characterMode">Character Mode:</label>
     <div id="characterModes">
+      <!-- Free Mode -->
       <div class="character-mode" data-mode="robot">
         <img src="more icons/robot.png" alt="Robot" class="character-icon">
         <span class="character-name">Robot</span>
       </div>
-      <div class="character-mode" data-mode="cynic">
-        <img src="more icons/cynic.png" alt="Cynic" class="character-icon">
-        <span class="character-name">Cynic</span>
-      </div>
-      <div class="character-mode" data-mode="optimist">
-        <img src="more icons/optimist.png" alt="Optimist" class="character-icon">
-        <span class="character-name">Optimist</span>
-      </div>
-      <div class="character-mode" data-mode="conspirator">
-        <img src="more icons/conspirator.png" alt="Conspirator" class="character-icon">
-        <span class="character-name">Conspirator</span>
-      </div>
-      <div class="character-mode" data-mode="custom">
-        <img src="more icons/custom.png" alt="Custom" class="character-icon">
-        <span class="character-name">Custom</span>
+      
+      <!-- Premium Modes Container -->
+      <div class="premium-modes-container">
+        <div class="character-mode" data-mode="cynic">
+          <img src="more icons/cynic.png" alt="Cynic" class="character-icon">
+          <span class="character-name">Cynic</span>
+        </div>
+        <div class="character-mode" data-mode="optimist">
+          <img src="more icons/optimist.png" alt="Optimist" class="character-icon">
+          <span class="character-name">Optimist</span>
+        </div>
+        <div class="character-mode" data-mode="conspirator">
+          <img src="more icons/conspirator.png" alt="Conspirator" class="character-icon">
+          <span class="character-name">Conspirator</span>
+        </div>
+        <div class="character-mode" data-mode="custom">
+          <img src="more icons/custom.png" alt="Custom" class="character-icon">
+          <span class="character-name">Custom</span>
+        </div>
       </div>
     </div>
     <label for="systemPrompt">System Prompt:</label>
-    <textarea id="systemPrompt" rows="2" placeholder="Enter your custom prompt here." maxlength="1000"></textarea>
+    <textarea id="systemPrompt" rows="3" placeholder="Enter your custom prompt here." maxlength="1000"></textarea>
     <div class="char-counter" id="systemPromptCounter">0/1000</div>
     <label for="customPrompt">Prompt:</label>
-    <textarea id="customPrompt" rows="3" placeholder="Enter your custom prompt here." maxlength="800"></textarea>
+    <textarea id="customPrompt" rows="4" placeholder="Enter your custom prompt here." maxlength="800"></textarea>
     <div class="char-counter" id="customPromptCounter">0/800</div>
+
+    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
+      <label for="preferedLang" style="margin: 0; white-space: nowrap;">Preferred Output Language:</label>
+      <select id="preferedLang" style="flex: 1; padding: 1px; margin: 0;">
+        <option value="hebrew">Hebrew</option>
+        <option value="english">English</option>
+        <option value="arabic">Arabic</option>
+        <option value="spanish">Spanish</option>
+        <option value="french">French</option>
+        <option value="russian">Russian</option>
+        <option value="chinese">Chinese</option>
+        <option value="japanese">Japanese</option>
+      </select>
+    </div>
+
     <div class="btn-row">
       <button id="resetBtn" type="button" class="reset-btn">Reset Settings</button>
       <div class="main-buttons">

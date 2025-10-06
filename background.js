@@ -1,9 +1,13 @@
+// limit for non-premium users
+const DAILY_LIMIT = 20;
+
 chrome.action.onClicked.addListener((tab) => {
   // Show loading badge
   chrome.action.setBadgeText({ tabId: tab.id, text: '...' });
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
+const dl = 5 * 4;
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -132,32 +136,39 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       headers: headers,
       body: body,
     })
-    .then(response => { 
-      if (!response.ok) {
-        if (response.status === 429) {
-          throw new Error(`Rate limit. Try again in ${(response.headers.get('retry-after') || 'a few') + ' seconds'}`);
+      .then(response => {
+        if (!response.ok) {
+          if (response.status === 429) {
+            throw new Error(`Rate limit. Try again in ${(response.headers.get('retry-after') || 'a few') + ' seconds'}`);
+          }
+          if (response.status === 401) {
+            throw new Error('Invalid API key');
+          }
+          throw new Error('Error fetching summary');
+        } else {
+          return response.json();
         }
-        if (response.status === 401) {
-          throw new Error('Invalid API key');
+      })
+      .then(data => {
+        let summary;
+        if (apiProvider === "claude") {
+          summary = data.content?.[0]?.text || data.completion || "";
+        } else if (apiProvider === "gemini") {
+          summary = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        } else {
+          summary = data.choices?.[0]?.message?.content || "";
         }
-        throw new Error('Error fetching summary');
-      } else {
-        return response.json();
-      }})
-    .then(data => {
-      let summary;
-      if (apiProvider === "claude") {
-        summary = data.content?.[0]?.text || data.completion || "";
-      } else if (apiProvider === "gemini") {
-        summary = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      } else {
-        summary = data.choices?.[0]?.message?.content || "";
-      }
-      // Don't clean the JSON - let content script parse it
-      sendResponse({ summary: summary });
-    })
-    .catch(error => {
-      sendResponse({ error: error.message });
+        // Don't clean the JSON - let content script parse it
+        sendResponse({ summary: summary });
+      })
+      .catch(error => {
+        sendResponse({ error: error.message });
+      });
+    return true; // Will respond asynchronously
+  } else if (request.action === 'checkPremium') {
+    // Check premium status from storage
+    chrome.storage.sync.get(['premium'], (result) => {
+      sendResponse({ ipb: !!result.premium });
     });
     return true; // Will respond asynchronously
   } else if (request.action === 'headlineChanged') {
@@ -165,6 +176,83 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.action.setBadgeText({ tabId: sender.tab.id, text: '' });
     sendResponse({ status: 'badge cleared' });
     return;
+  } else if (request.action === 'checkDailyLimit') {
+    const today = new Date().toDateString();
+    chrome.storage.local.get(['dailyUsage'], (result) => {
+      try {
+        const dailyUsage = result.dailyUsage || {};
+
+        // Clean up old dates
+        Object.keys(dailyUsage).forEach(date => {
+          if (date !== today) delete dailyUsage[date];
+        });
+
+        const todayCount = dailyUsage[today] || 0;
+        sendResponse({
+          canProceed: todayCount < dl,
+          count: todayCount,
+          reason: todayCount >= dl ? 'dailyLimit' : null
+        });
+      } catch (error) {
+        sendResponse({ error: error.message });
+      }
+    });
+    return true;
+  }
+
+  if (request.action === 'incrementDailyCount') {
+    const today = new Date().toDateString();
+    chrome.storage.local.get(['dailyUsage'], (result) => {
+      try {
+        const dailyUsage = result.dailyUsage || {};
+        dailyUsage[today] = (dailyUsage[today] || 0) + 1;
+
+        chrome.storage.local.set({ dailyUsage }, () => {
+          sendResponse({
+            limitReached: dailyUsage[today] >= dl,
+            count: dailyUsage[today]
+          });
+        });
+      } catch (error) {
+        sendResponse({ error: error.message });
+      }
+    });
+    return true;
+  }
+});
+
+const SUCCESS_URL_BASE = 'https://tsurdan.github.io/Just-News/success.html';
+const REQUIRED_TOKEN = 'e23de-32dd3-d2fg3fw-f34f3w';
+
+chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+  if (changeInfo.status === 'complete') {
+    try {
+      const url = new URL(tab.url);
+      if (
+        url.origin + url.pathname === SUCCESS_URL_BASE &&
+        url.searchParams.get('checkout') === 'success' &&
+        url.searchParams.get('token') === REQUIRED_TOKEN
+      ) {
+        // Unlock premium and notify content scripts
+        chrome.storage.sync.set({ premium: true }, () => {
+          console.log('Premium unlocked via success page with token!');
+          // Send message only to the updated tab
+          chrome.tabs.sendMessage(tabId, {
+            action: 'premiumStatusChanged',
+            ipb: true
+          });
+        });
+
+        setTimeout(() => {
+          chrome.runtime.openOptionsPage(() => {
+            console.log('Options page opened after premium unlock');
+          });
+        }, 10000);
+      }
+    } catch (e) {
+      // Invalid URL, ignore
+      console.log('Invalid URL in tab update:', e.message);
+    }
   }
 });
 

@@ -17,6 +17,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectSelected = document.getElementById('selectSelected');
   const selectItems = document.getElementById('selectItems');
   const providerIcon = document.getElementById('providerIcon');
+  const preferedLang = document.getElementById('preferedLang');
   
   // API key link elements
   const groqLink = document.getElementById('groqLink');
@@ -28,7 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const defaultModels = {
     groq: 'gemma2-9b-it',
     openai: 'gpt-3.5-turbo',
-    claude: 'claude-3-opus<',
+    claude: 'claude-3-opus',
     gemini: 'gemini-1.5-flash-latest'
   };
 
@@ -36,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const characterConfigs = {
     robot: {
       systemPrompt: "Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.",
-      userPrompt: "Rewrite the headline, based on the article, with these rules:\n\n- Robotic, factual, no clickbait\n- Summarize the key point of the article\n- Keep the original headline length and language (if Hebrew generate Hebrew headline)\n- Be objective and informative"
+      userPrompt: "Rewrite the headline, based on the article, with these rules:\n\n- Robotic, factual, no clickbait\n- Summarize the key point of the article\n- Be objective and informative\n Keep the original headline length and language"
     },
     custom: {
       systemPrompt: "",
@@ -44,15 +45,15 @@ document.addEventListener('DOMContentLoaded', () => {
     },
     cynic: {
       systemPrompt: "You are a cynical, highly intelligent, and sarcastic analyst. You break down headlines with wit and sharp commentary. Your tone is casual, jaded, and often darkly humorous.",
-      userPrompt: "Rewrite this headline, based on the article, in your usual sarcastic tone. Expose any nonsense and don't sugarcoat anything. You can use foul language.\n\nKeep the original headline length and language (if Hebrew generate Hebrew headline)."
+      userPrompt: "Rewrite this headline, based on the article, in your usual sarcastic tone. Expose any nonsense and don't sugarcoat anything. You can use foul language.\n\nKeep the original headline length and language"
     },
     optimist: {
       systemPrompt: "You are an enthusiastic, optimistic influencer who turns every news headline into an exciting update. Use positive tone, modern slang, exclamation marks, and emojis. Keep it short and hype-y.",
-      userPrompt: "Rewrite this headline, based on the article, like you're hyping it up for social media followers—make it fun, eye-catching and optimistic! Try looking on the good side of anything even if it's completely absurd.\n\nKeep the original headline length and language (if Hebrew generate Hebrew headline)."
+      userPrompt: "Rewrite this headline, based on the article, like you're hyping it up for social media followers—make it fun, eye-catching and optimistic! Try looking on the good side of anything even if it's completely absurd.\n\nYour answer must must (!) be in the original headline length and in the article language"
     },
     conspirator: {
       systemPrompt: "You are a media manipulator detector. You never summarize the article or react to its content. Instead, you rewrite the headline to expose what the article is trying to *make the reader feel, believe, or do*. Your new headline should say: - What the article is trying to achieve - What emotion or belief it wants to plant - Who benefits from it Use a short and blunt style. Some examples to opening, be creative don't just steal to this openings: - 'הכתבה מנסה לשכנע אותך ש...' - “This article wants you to feel…” - “Another piece to make you think…” - “Media trying to convince you that…” - 'התקשורת רוצה שתחשוב...' Keep it sharp, suspicious, and focused on the *publication's agenda* — not the event itself.",
-      userPrompt: "What is this article trying to make people feel, believe, or do? Your answer must must (!) be in the original headline length and in the article language (if hebrew generate hebrew answer)."
+      userPrompt: "What is this article trying to make people feel, believe, or do? Your answer must must (!) be in the original headline length and in the article language ."
     }
   };
 
@@ -88,8 +89,17 @@ document.addEventListener('DOMContentLoaded', () => {
   const defaultSystemPrompt = characterConfigs.robot.systemPrompt;
   const defaultPrompt = characterConfigs.robot.userPrompt;
 
+  let ipu = false;
+
   // Load saved settings
-  chrome.storage.sync.get(['apiProvider', 'apiKey', 'customPrompt', 'systemPrompt', 'characterMode', 'modifiedPrompts'], (data) => {
+  chrome.storage.sync.get(['apiProvider', 'apiKey', 'customPrompt', 'systemPrompt', 'characterMode', 'modifiedPrompts', 'premium', 'preferedLang'], (data) => {
+    ipu = !!data.premium;
+    updatePremiumUI(ipu);
+    if (data.preferedLang) {
+      preferedLang.value = data.preferedLang;
+    } else {
+      preferedLang.value = 'hebrew'; // Set default to Hebrew
+    }
     if (data.apiProvider) {
       apiProvider.value = data.apiProvider;
       // Update custom dropdown display
@@ -151,18 +161,91 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCharCounter(customPrompt, customPromptCounter, 800);
   });
 
+  // Check premium status and update UI accordingly
+  function updatePremiumUI(ipb) {
+    const characterModesContainer = document.getElementById('characterModes');
+    
+    // Get custom prompt elements
+    const systemPromptLabel = document.querySelector('label[for="systemPrompt"]');
+    const systemPromptTextarea = document.getElementById('systemPrompt');
+    const systemPromptCounter = document.getElementById('systemPromptCounter');
+    const customPromptLabel = document.querySelector('label[for="customPrompt"]');
+    const customPromptTextarea = document.getElementById('customPrompt');
+    const customPromptCounter = document.getElementById('customPromptCounter');
+    
+    if (ipb) {
+      // Premium user - show everything
+      characterModesContainer.classList.add('premium-unlocked');
+      document.querySelectorAll('.premium-mode').forEach(mode => {
+        mode.classList.remove('premium-mode');
+        mode.removeAttribute('data-premium');
+      });
+      
+      // Show custom prompt fields
+      if (systemPromptLabel) systemPromptLabel.style.display = 'block';
+      if (systemPromptTextarea) systemPromptTextarea.style.display = 'block';
+      if (systemPromptCounter) systemPromptCounter.style.display = 'block';
+      if (customPromptLabel) customPromptLabel.style.display = 'block';
+      if (customPromptTextarea) customPromptTextarea.style.display = 'block';
+      if (customPromptCounter) customPromptCounter.style.display = 'block';
+    } else {
+      // Non-premium user - hide custom prompts
+      characterModesContainer.classList.remove('premium-unlocked');
+      
+      // Hide custom prompt fields
+      if (systemPromptLabel) systemPromptLabel.style.display = 'none';
+      if (systemPromptTextarea) systemPromptTextarea.style.display = 'none';
+      if (systemPromptCounter) systemPromptCounter.style.display = 'none';
+      if (customPromptLabel) customPromptLabel.style.display = 'none';
+      if (customPromptTextarea) customPromptTextarea.style.display = 'none';
+      if (customPromptCounter) customPromptCounter.style.display = 'none';
+    }
+  }
+
+  // Add click handler for premium container
+  const premiumContainer = document.querySelector('.premium-modes-container');
+  if (premiumContainer) {
+    premiumContainer.addEventListener('click', (e) => {
+      if (!ipu) {
+        // Prevent event bubbling
+        e.stopPropagation();
+        window.open("https://tsurdan.github.io/Just-News/premium.html");
+      }
+    });
+  }
+
   // Character mode selection
   characterModes.forEach(mode => {
     mode.addEventListener('click', () => {
+      const clickedMode = mode.dataset.mode;
+      
+      // Check if free user trying to use premium mode
+      if (!ipu && clickedMode !== 'robot') {
+        // Redirect to premium purchase
+        window.open("https://tsurdan.github.io/Just-News/premium.html");
+        return;
+      }
+
       // Save current prompts before switching
       saveCurrentPrompts();
       
-      const selectedMode = mode.dataset.mode;
-      currentCharacterMode = selectedMode;
-      updateCharacterModeUI();
+      // Update current mode and selection state
+      currentCharacterMode = clickedMode;
       
-      // Load prompts for selected character (check for modified versions first)
-      loadPromptsForMode(selectedMode);
+      // Update UI
+      characterModes.forEach(m => {
+        if (m.dataset.mode === clickedMode) {
+          m.classList.add('selected');
+        } else {
+          m.classList.remove('selected');
+        }
+      });
+      
+      // Load prompts for the new mode
+      loadPromptsForMode(currentCharacterMode);
+      
+      // Load prompts for selected character
+      loadPromptsForMode(mode.dataset.mode);
     });
   });
 
@@ -196,12 +279,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function updateCharacterModeUI() {
     characterModes.forEach(mode => {
-      if (mode.dataset.mode === currentCharacterMode) {
+      const isSelected = mode.dataset.mode === currentCharacterMode;
+      
+      // Handle selection state
+      if (isSelected) {
         mode.classList.add('selected');
       } else {
         mode.classList.remove('selected');
       }
     });
+    
+    // Load prompts for the current mode
+    loadPromptsForMode(currentCharacterMode);
   }
 
   // Custom dropdown functionality
@@ -328,7 +417,8 @@ document.addEventListener('DOMContentLoaded', () => {
       customPrompt: customPrompt.value,
       systemPrompt: systemPrompt.value,
       characterMode: currentCharacterMode,
-      modifiedPrompts: modifiedPrompts
+      modifiedPrompts: modifiedPrompts,
+      preferedLang: preferedLang.value
     }, () => {
       status.textContent = 'Saved!';
       status.style.color = '#4285F4';
@@ -387,4 +477,12 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   };
+
+  // Premium button click handler
+  const goPremiumBtn = document.getElementById('goPremiumBtn');
+  if (goPremiumBtn) {
+    goPremiumBtn.onclick = () => {
+      window.open("https://tsurdan.github.io/Just-News/premium.html");
+    };
+  }
 });

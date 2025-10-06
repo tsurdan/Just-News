@@ -1,9 +1,31 @@
+let premium = false; // Track premium status
 let isInitialized = false;
 let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
+let ipu = false;
 
-function initializeContentScript() {
+// Function to initialize premium status - only called once during startup
+async function initializePremiumStatus() {
+  try {
+    const response = await chrome.runtime.sendMessage({ action: 'checkPremium' });
+    ipu = response.ipb;
+    console.log('Premium status initialized:', ipu);
+  } catch (error) {
+    console.log('Error checking premium status:', error);
+    ipu = false;
+  }
+}
+
+// Sync function to check premium status - uses cached value
+function ipb() {
+  return ipu;
+}
+
+async function initializeContentScript() {
   if (isInitialized) return;
+  
+  // Initialize premium status
+  await initializePremiumStatus();
   
   // Add tooltip styles to the page
   addTooltipStyles();
@@ -14,6 +36,11 @@ function initializeContentScript() {
       counter = 0;
       summarizeHeadlines();
       sendResponse({status: 'Processing started'});
+    } else if (request.action === 'premiumStatusChanged') {
+      // Update cached premium status when it changes
+      ipu = request.ipb;
+      console.log('Premium status updated:', ipu);
+      sendResponse({status: 'premium status updated'});
     }
     return true;
   });
@@ -64,9 +91,10 @@ function addTooltipStyles() {
 async function summarizeHeadlines() {
   let apiKey = "";
   let apiProvider = "groq";
-  let model = "gemma2-9b-it";
+  let model = "";
   let customPrompt = "";
   let systemPrompt = "";
+  let preferedLang = "hebrew";
   const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
   const defaultPrompt = `Rewrite the headline with these rules:
 
@@ -76,21 +104,34 @@ async function summarizeHeadlines() {
 - Be objective and informative`;
 
   try {
-    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt']);
+    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang']);
     apiKey = settings.apiKey || "";
     apiProvider = settings.apiProvider || "groq";
     model = settings.model || "gemma2-9b-it";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
+    preferedLang = settings.preferedLang || "hebrew";
     if (!apiKey) {
-      await promptForApiKey('Enter API key (one-time setup)');
+      await promptForApiKey('Enter key (one-time setup)');
       return;
     }
   } catch (error) {
     await createNotification('Error checking API key. Please try again.');
   }
-  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt}; 
-  const limit = 20;
+  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
+  
+  // Check daily rate limit with background script
+  if (!ipb()) {
+    const limitCheck = await chrome.runtime.sendMessage({ action: 'checkDailyLimit' });
+    if (!limitCheck.canProceed) {
+      if (limitCheck.reason === 'dailyLimit') {
+        await createNotification('Daily limit reached. \n\nTo remove the limit, upgrade to premium!');
+      }
+      return;
+    }
+  }
+
+  const limit = 20; // Maximum headlines per click (different from daily limit)
   let firstHeadlineChanged = false;
 
   // This function will be injected into the page
@@ -113,16 +154,22 @@ async function summarizeHeadlines() {
     return true;
   });
 
-  // Filter out headlines that are not in the user's screen frame
-  const viewportHeight = window.innerHeight;
-  const viewportTop = window.scrollY // Maybe Add extra space to the frame?
-  const viewportBottom = viewportTop + viewportHeight
-
+  // Filter out headlines that are not visible in the viewport
   headlines = headlines.filter(headline => {
     const rect = headline.getBoundingClientRect();
-    const headlineTop = rect.top + window.scrollY;
-    const headlineBottom = rect.bottom + window.scrollY;
-    return (headlineTop >= viewportTop && headlineBottom <= viewportBottom);
+    const style = window.getComputedStyle(headline);
+    
+    // Check if headline is at least partially visible in viewport
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
+      return false;
+    }
+    
+    // Check if element is hidden via CSS
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0 || rect.width === 0 || rect.height === 0) {
+      return false;
+    }
+    
+    return true;
   });
 
   // Filter out subject headlines
@@ -151,10 +198,18 @@ async function summarizeHeadlines() {
             const { headline: newHeadline, summary } = parseAIResponse(result);
             
             // Cache the summary for tooltip use
-            articleSummaries.set(articleUrl, summary);
-            
+            if (ipb()) {
+              articleSummaries.set(articleUrl, summary);
+            }
+
             typeHeadline(headline, `~${newHeadline}`);
             counter++;
+
+            // Update daily count with background script
+            if (!ipb()) {
+              chrome.runtime.sendMessage({ action: 'incrementDailyCount' }, (usage) => {});
+            }
+
             // Notify background to clear badge after first headline changes
             if (!firstHeadlineChanged) {
               firstHeadlineChanged = true;
@@ -312,7 +367,9 @@ function typeHeadline(element, text) {
     } else {
       clearInterval(interval);
       // Add tooltip functionality after typing is complete
-      setupTooltip(element);
+      if (ipb()) {
+        setupTooltip(element);
+      }
     }
   }, 50); // Adjust typing speed by changing the interval time
 }
@@ -340,15 +397,13 @@ function setupTooltip(element) {
       tooltip.className = 'just-news-tooltip';
       
       // Get cached summary (should already be available from initial API call)
-      if (articleSummaries.has(articleUrl)) {
-        const summary = articleSummaries.get(articleUrl);
-        tooltip.textContent = summary;
-      } else {
-        tooltip.textContent = 'Summary unavailable';
-      }
-      
-      document.body.appendChild(tooltip);
-      
+        if (articleSummaries.has(articleUrl)) {
+          const summary = articleSummaries.get(articleUrl);
+          tooltip.textContent = summary;
+        } else {
+          tooltip.textContent = 'Summary unavailable';
+        }
+        document.body.appendChild(tooltip);
       // Position tooltip after a small delay to ensure it's rendered
       setTimeout(() => {
         positionTooltip(element, tooltip);
@@ -487,7 +542,7 @@ async function fetchContent(url) {
 }
 
 async function summarizeContnet(sourceHeadline, content, options) {
-  const { apiKey, apiProvider, model, customPrompt, systemPrompt } = options;
+  const { apiKey, apiProvider, model, customPrompt, systemPrompt, preferedLang } = options;
   
   // System-controlled instructions that users cannot modify
   const systemInstructions = `
@@ -499,8 +554,8 @@ IMPORTANT: You must return your response in this exact JSON format:
 {"new_headline": "<your rewritten headline>", "article_summary": "<2-3 sentence objective summary of the article>"}
 
 Do not add any text before or after the JSON. Only return the JSON object.`;
-  
-  const prompt = customPrompt + systemInstructions;
+
+  const prompt = customPrompt + `(if ${preferedLang} generate ${preferedLang} headline).` + systemInstructions;
   const response = await chrome.runtime.sendMessage({
     action: 'AIcall',
     sourceHeadline,
@@ -534,54 +589,193 @@ function createApiKeyPrompt(message, currentKey = '') {
     justify-content: center;
     align-items: center;
     z-index: 10000;
-    font-family: Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    backdrop-filter: blur(3px);
+    direction: ltr;
   `;
 
   const promptBox = document.createElement('div');
   promptBox.style.cssText = `
     background: white;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    width: 300px;
+    padding: 32px 28px;
+    border-radius: 16px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+    width: 90%;
+    max-width: 480px;
     box-sizing: border-box;
+    animation: slideIn 0.3s ease;
+    max-height: 90vh;
+    overflow-y: auto;
+    direction: ltr;
+    text-align: left;
   `;
 
   const title = document.createElement('h3');
-  title.textContent = message;
+  title.textContent = '🚀 Quick Free Setup Required';
   title.style.cssText = `
-    text-align: left;
-    font-size: 16px;
-    color: black;
-    font-weight: bold;
-    margin-bottom: 15px;
+    text-align: center;
+    font-size: 18px;
+    color: #333;
+    font-weight: 700;
+    margin-bottom: 16px;
+    line-height: 1.3;
   `;
 
-  const linkToGenerateKey = document.createElement('a');
-  linkToGenerateKey.textContent = 'Generate key here';
-  linkToGenerateKey.href = 'https://console.groq.com/keys';
-  linkToGenerateKey.target = '_blank';
-  linkToGenerateKey.style.cssText = `
-    margin-bottom: 15px;
-    color: #4285F4;
-    text-decoration: underline;
-    text-align: left;
-    font-size: 12px;
+  const stepsContainer = document.createElement('div');
+  stepsContainer.style.cssText = `
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #4285F4;
+    direction: ltr;
+  `;
+
+  // Create step 1 - Sign up (clickable)
+  const step1 = document.createElement('a');
+  step1.href = 'https://console.groq.com/';
+  step1.target = '_blank';
+  step1.style.cssText = `
+    display: flex;
+    align-items: start;
+    font-size: 14px;
+    color: #333;
+    direction: ltr;
+    text-decoration: none;
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    background: rgba(66, 133, 244, 0.05);
+    border: 2px solid rgba(66, 133, 244, 0.2);
+    box-shadow: 0 2px 4px rgba(66, 133, 244, 0.1);
+  `;
+  
+  step1.innerHTML = `
+    <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">1</span>
+    <div style="flex: 1;">
+      <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Sign up to Groq AI</div>
+      <div style="font-size: 12px; color: #666;">Create your free account • Click to open</div>
+    </div>
+    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">→</span>
+  `;
+
+  step1.onmouseover = () => {
+    step1.style.background = 'rgba(66, 133, 244, 0.1)';
+    step1.style.borderColor = '#4285F4';
+    step1.style.transform = 'translateY(-2px)';
+    step1.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.2)';
+  };
+  step1.onmouseout = () => {
+    step1.style.background = 'rgba(66, 133, 244, 0.05)';
+    step1.style.borderColor = 'rgba(66, 133, 244, 0.2)';
+    step1.style.transform = 'translateY(0)';
+    step1.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
+  };
+
+  // Create step 2 - Generate key (clickable)
+  const step2 = document.createElement('a');
+  step2.href = 'https://console.groq.com/keys';
+  step2.target = '_blank';
+  step2.style.cssText = `
+    display: flex;
+    align-items: start;
+    font-size: 14px;
+    color: #333;
+    direction: ltr;
+    text-decoration: none;
+    margin-bottom: 12px;
+    padding: 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    background: rgba(66, 133, 244, 0.05);
+    border: 2px solid rgba(66, 133, 244, 0.2);
+    box-shadow: 0 2px 4px rgba(66, 133, 244, 0.1);
+  `;
+  
+  step2.innerHTML = `
+    <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">2</span>
+    <div style="flex: 1;">
+      <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Generate your key</div>
+      <div style="font-size: 12px; color: #666;">Create your API key • Click to open</div>
+    </div>
+    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">→</span>
+  `;
+
+  step2.onmouseover = () => {
+    step2.style.background = 'rgba(66, 133, 244, 0.1)';
+    step2.style.borderColor = '#4285F4';
+    step2.style.transform = 'translateY(-2px)';
+    step2.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.2)';
+  };
+  step2.onmouseout = () => {
+    step2.style.background = 'rgba(66, 133, 244, 0.05)';
+    step2.style.borderColor = 'rgba(66, 133, 244, 0.2)';
+    step2.style.transform = 'translateY(0)';
+    step2.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
+  };
+
+  stepsContainer.appendChild(step1);
+  stepsContainer.appendChild(step2);
+  
+  const inputLabel = document.createElement('label');
+  inputLabel.textContent = 'Paste your key here:';
+  inputLabel.style.cssText = `
     display: block;
+    font-size: 14px;
+    color: #333;
+    font-weight: 600;
+    margin-bottom: 8px;
+    direction: ltr;
+    text-align: left;
   `;
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentKey;
-  input.placeholder = 'Enter your key';
+  input.placeholder = 'gsk...';
   input.style.cssText = `
     width: 100%;
-    padding: 8px;
-    margin-bottom: 15px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 8px;
+    border: 2px solid #e0e0e0;
+    border-radius: 8px;
     box-sizing: border-box;
+    font-size: 14px;
+    transition: all 0.2s ease;
+    outline: none;
+    font-family: monospace;
+    direction: ltr;
     text-align: left;
+  `;
+
+  const helpText = document.createElement('p');
+  helpText.textContent = 'Your key is safe and stored locally';
+  helpText.style.cssText = `
+    font-size: 12px;
+    color: #666;
+    margin-bottom: 20px;
+    text-align: center;
+    font-style: italic;
+  `;
+
+  input.onfocus = () => {
+    input.style.borderColor = '#4285F4';
+    input.style.boxShadow = '0 0 0 2px rgba(66, 133, 244, 0.1)';
+  };
+  input.onblur = () => {
+    input.style.borderColor = '#e0e0e0';
+    input.style.boxShadow = 'none';
+  };
+
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = `
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
   `;
 
   const submitButton = document.createElement('button');
@@ -590,28 +784,84 @@ function createApiKeyPrompt(message, currentKey = '') {
     background: #4285F4;
     color: white;
     border: none;
-    padding: 8px 16px;
-    border-radius: 4px;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
-    margin-right: 10px;
+    transition: all 0.2s ease;
   `;
+
+  submitButton.onmouseover = () => {
+    submitButton.style.background = '#1a73e8';
+    submitButton.style.transform = 'translateY(-1px)';
+  };
+  submitButton.onmouseout = () => {
+    submitButton.style.background = '#4285F4';
+    submitButton.style.transform = 'translateY(0)';
+  };
 
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'Cancel';
   cancelButton.style.cssText = `
-    background: gray;
-    border: 1px solid #ccc;
-    padding: 8px 16px;
-    border-radius: 4px;
+    background: transparent;
+    color: #666;
+    border: none;
+    padding: 12px 24px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
+    transition: all 0.2s ease;
   `;
 
+  cancelButton.onmouseover = () => {
+    cancelButton.style.background = '#f5f5f5';
+    cancelButton.style.transform = 'translateY(-1px)';
+  };
+  cancelButton.onmouseout = () => {
+    cancelButton.style.background = 'transparent';
+    cancelButton.style.transform = 'translateY(0)';
+  };
+
+  buttonContainer.appendChild(submitButton);
+  buttonContainer.appendChild(cancelButton);
+  
   promptBox.appendChild(title);
-  promptBox.appendChild(linkToGenerateKey);
+  promptBox.appendChild(stepsContainer);
+  promptBox.appendChild(inputLabel);
   promptBox.appendChild(input);
-  promptBox.appendChild(submitButton);
-  promptBox.appendChild(cancelButton);
+  promptBox.appendChild(helpText);
+  promptBox.appendChild(buttonContainer);
   overlay.appendChild(promptBox);
+
+  // Add the slideIn animation
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+  `;
+  document.head.appendChild(style);
+
+  submitButton.addEventListener('click', () => {
+    chrome.storage.sync.set({ apiKey: input.value }, () => {
+      overlay.remove();
+      style.remove();
+    });
+  });
+
+  cancelButton.addEventListener('click', () => {
+    overlay.remove();
+    style.remove();
+  });
 
   return { overlay, input, submitButton, cancelButton };
 }
@@ -629,42 +879,143 @@ function createNotificationPrompt(message) {
     justify-content: center;
     align-items: center;
     z-index: 10000;
-    font-family: Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    backdrop-filter: blur(3px);
+    direction: ltr;
   `;
 
   const promptBox = document.createElement('div');
   promptBox.style.cssText = `
     background: white;
-    padding: 20px;
-    border-radius: 8px;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-    width: 300px;
+    padding: 28px 24px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+    width: 90%;
+    max-width: 400px;
     box-sizing: border-box;
+    animation: slideIn 0.3s ease;
+    min-height: 160px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    direction: ltr;
+    text-align: left;
   `;
 
   const title = document.createElement('h3');
   title.textContent = message;
   title.style.cssText = `
     text-align: center;
-    color: black;
-    margin-bottom: 15px;
+    color: #333;
+    margin: 0 0 20px 0;
+    font-size: 16px;
+    line-height: 1.6;
+    font-weight: normal;
+    white-space: pre-line;
+    direction: ltr;
   `;
+
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = `
+    display: flex;
+    direction: ltr;
+    justify-content: center;
+    align-items: center;
+    gap: 12px;
+  `;
+
+  // Add upgrade button only for daily limit message
+  if (message === "Daily limit reached. \n\nTo remove the limit, upgrade to premium!") {
+    const upgradeButton = document.createElement('a');
+    upgradeButton.href = 'https://tsurdan.github.io/Just-News/premium.html';
+    upgradeButton.target = '_blank';
+    upgradeButton.style.cssText = `
+      position: relative;
+      padding: 2px;
+      border-radius: 30px;
+      background: linear-gradient(135deg, 
+        #8A2BE2 0%,
+        #58CC02 25%,
+        #6200EE 50%,
+        #58CC02 75%,
+        #8A2BE2 100%
+      );
+      background-size: 300% 300%;
+      animation: gradientShift 8s linear infinite;
+      text-decoration: none;
+      cursor: pointer;
+      direction: ltr;
+    `;
+
+    const upgradeSpan = document.createElement('span');
+    upgradeSpan.textContent = 'Upgrade to Premium';
+    upgradeSpan.style.cssText = `
+      display: block;
+      background: transparent;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 28px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      direction: ltr;
+      text-align: center;
+    `;
+
+    upgradeButton.appendChild(upgradeSpan);
+    upgradeButton.onmouseover = () => {
+      upgradeSpan.style.background = 'white';
+      upgradeSpan.style.color = '#6200EE';
+    };
+    upgradeButton.onmouseout = () => {
+      upgradeSpan.style.background = 'transparent';
+      upgradeSpan.style.color = 'white';
+    };
+    buttonContainer.appendChild(upgradeButton);
+  }
 
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'OK';
   cancelButton.style.cssText = `
-    background: gray;
-    border: 1px solid #ccc;
-    padding: 8px 16px;
-    border-radius: 4px;
+    background: #4285F4;
+    color: white;
+    border: none;
+    padding: 10px 24px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
     cursor: pointer;
-    align-self: center;
-    display: block;
-    margin: 0 auto;
+    transition: all 0.2s ease;
+    direction: ltr;
   `;
 
+  cancelButton.onmouseover = () => {
+    cancelButton.style.background = '#1a73e8';
+    cancelButton.style.transform = 'translateY(-1px)';
+  };
+  cancelButton.onmouseout = () => {
+    cancelButton.style.background = '#4285F4';
+    cancelButton.style.transform = 'translateY(0)';
+  };
+
+  // Add style for animations
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    @keyframes gradientShift {
+      0% { background-position: 0% 50% }
+      50% { background-position: 100% 50% }
+      100% { background-position: 0% 50% }
+    }
+  `;
+  document.head.appendChild(style);
+
+  buttonContainer.appendChild(cancelButton);
   promptBox.appendChild(title);
-  promptBox.appendChild(cancelButton);
+  promptBox.appendChild(buttonContainer);
   overlay.appendChild(promptBox);
 
   return { overlay, cancelButton };
@@ -679,7 +1030,6 @@ async function promptForApiKey(message, currentKey = '') {
       const apiKey = input.value.trim();
       if (apiKey) {
         await chrome.storage.sync.set({ apiKey });
-        document.body.removeChild(overlay);
         summarizeHeadlines();
         resolve(apiKey);
       } else {
@@ -688,7 +1038,11 @@ async function promptForApiKey(message, currentKey = '') {
     };
 
     cancelButton.onclick = () => {
-      document.body.removeChild(overlay);
+      try {
+        document.body.removeChild(overlay);
+      } catch (error) {
+        // Ignore if already removed
+      }
       resolve(null);
     };
   });
