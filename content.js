@@ -131,7 +131,7 @@ async function summarizeHeadlines() {
     }
   }
 
-  const limit = 20; // Maximum headlines per click (different from daily limit)
+  const limit = 20; // Maximum headlines per click
   let firstHeadlineChanged = false;
 
   // This function will be injected into the page

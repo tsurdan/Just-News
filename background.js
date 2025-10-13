@@ -1,5 +1,5 @@
 // limit for non-premium users
-const DAILY_LIMIT = 20;
+const DAILY_LIMIT = 30;
 
 chrome.action.onClicked.addListener((tab) => {
   // Show loading badge
@@ -7,7 +7,7 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
-const dl = 5 * 4;
+const dl = 5 * 6;
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
