@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Default models for each API provider
   const defaultModels = {
-    groq: 'gemma2-9b-it',
+    groq: 'meta-llama/llama-4-scout-17b-16e-instruct',
     openai: 'gpt-3.5-turbo',
     claude: 'claude-3-opus',
     gemini: 'gemini-1.5-flash-latest'
@@ -98,7 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (data.preferedLang) {
       preferedLang.value = data.preferedLang;
     } else {
-      preferedLang.value = 'hebrew'; // Set default to Hebrew
+      preferedLang.value = 'english'; // Set default to English
     }
     if (data.apiProvider) {
       apiProvider.value = data.apiProvider;

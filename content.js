@@ -94,7 +94,7 @@ async function summarizeHeadlines() {
   let model = "";
   let customPrompt = "";
   let systemPrompt = "";
-  let preferedLang = "hebrew";
+  let preferedLang = "english";
   const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
   const defaultPrompt = `Rewrite the headline with these rules:
 
@@ -107,10 +107,10 @@ async function summarizeHeadlines() {
     const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang']);
     apiKey = settings.apiKey || "";
     apiProvider = settings.apiProvider || "groq";
-    model = settings.model || "gemma2-9b-it";
+    model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
-    preferedLang = settings.preferedLang || "hebrew";
+    preferedLang = settings.preferedLang || "english";
     if (!apiKey) {
       await promptForApiKey('Enter key (one-time setup)');
       return;
@@ -555,7 +555,11 @@ IMPORTANT: You must return your response in this exact JSON format:
 
 Do not add any text before or after the JSON. Only return the JSON object.`;
 
-  const prompt = customPrompt + `(if ${preferedLang} generate ${preferedLang} headline).` + systemInstructions;
+  let prompt = customPrompt;
+  if (preferedLang != 'english') {
+    prompt += `(if ${preferedLang} generate ${preferedLang} headline).`;
+  } 
+  prompt += systemInstructions;
   const response = await chrome.runtime.sendMessage({
     action: 'AIcall',
     sourceHeadline,
