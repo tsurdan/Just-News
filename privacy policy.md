@@ -16,7 +16,7 @@ The extension uses Google Chrome's Storage API to locally store:
 All this data is stored locally on your device and is used only for extension functionality. This local storage is similar to a cookie and is not accessible to other websites or transmitted to external servers.
 
 ## Third-Party API
-As mentioned, the extension interacts with a third-party API to generate informative headlines. The default LLM api is groq api, that hosting google gemma model, but if selected it can make the requests to gemini, chatgpt or claude. When you click on the extension, it identifies headlines on a news website, extracts the content of the articles, and sends this content to the slected LLM API to generate new headlines. The data sent to the API includes:
+As mentioned, the extension interacts with a third-party API to generate informative headlines. The default LLM api is groq api, that hosting meta llama model, but if selected it can make the requests to gemini, chatgpt or claude. When you click on the extension, it identifies headlines on a news website, extracts the content of the articles, and sends this content to the slected LLM API to generate new headlines. The data sent to the API includes:
 - The original headline
 - The content of the article
 

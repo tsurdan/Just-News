@@ -11,7 +11,7 @@
 
 - Scans the page for visible news headlines.
 - Extracts the full article content for each headline.
-- Uses **Gemma AI via Groq API** to generate a new, informative title.
+- Uses **llama AI via Groq API** to generate a new, informative title.
 - Replaces the original headline directly on the page, in real time.
 
 ---
