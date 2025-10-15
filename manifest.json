@@ -5,7 +5,6 @@
   "description": "Replaces clickbait headlines with informative summaries",
   "permissions": [
     "activeTab",
-    "webNavigation",
     "scripting",
     "storage"
   ],
@@ -16,6 +15,11 @@
     "https://generativelanguage.googleapis.com/*",
     "https://tsurdan.github.io/*"
   ],
+  "externally_connectable": {
+    "matches": [
+      "https://tsurdan.github.io/*"
+    ]
+  },
   "action": {
     "default_title": "Summarize Headlines, Remove clickbait"
   },

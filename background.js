@@ -221,26 +221,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 
-const SUCCESS_URL_BASE = 'https://tsurdan.github.io/Just-News/success.html';
 const REQUIRED_TOKEN = 'e23de-32dd3-d2fg3fw-f34f3w';
 
-chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-  if (changeInfo.status === 'complete') {
-    try {
-      const url = new URL(tab.url);
-      if (
-        url.origin + url.pathname === SUCCESS_URL_BASE &&
-        url.searchParams.get('checkout') === 'success' &&
-        url.searchParams.get('token') === REQUIRED_TOKEN
-      ) {
-        // Unlock premium and notify content scripts
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (message.type === "activatePremium" && message.token == REQUIRED_TOKEN) {
         chrome.storage.sync.set({ premium: true }, () => {
-          console.log('Premium unlocked via success page with token!');
-          // Send message only to the updated tab
-          chrome.tabs.sendMessage(tabId, {
-            action: 'premiumStatusChanged',
-            ipb: true
-          });
+          console.log('Premium unlocked via success page!');
         });
 
         setTimeout(() => {
@@ -248,11 +234,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
             console.log('Options page opened after premium unlock');
           });
         }, 10000);
-      }
-    } catch (e) {
-      // Invalid URL, ignore
-      console.log('Invalid URL in tab update:', e.message);
-    }
+    return true;
   }
 });
 
