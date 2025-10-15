@@ -243,43 +243,33 @@
       }
     </style>
         <script>
-// Cross-browser compatibility 
-if (typeof browser !== 'undefined' && !chrome) {
-  window.chrome = browser;
-}
+      (async () => {
+        const params = new URLSearchParams(location.search);
+        const token = params.get("token");
+        const checkout = params.get("checkout");
 
-(async () => {
-  const params = new URLSearchParams(location.search);
-  const token = params.get("token");
-  const checkout = params.get("checkout");
+        if (checkout === "success" && token) {
+          try {
+            const isFirefox = navigator.userAgent.includes('Firefox');
+            console.log(`browser is:${isFirefox ? "firefox" : "chrome"}`);
 
-  if (checkout === "success" && token) {
-    try {
-      // Detect browser using user agent since browser API isn't available in local files
-      const isFirefox = navigator.userAgent.includes('Firefox');
-      const extensionId = isFirefox ? "just-news@tsurdan.dev" : "bjeicinigicmeicfnibabdfanajpigln";
-      console.log(`browser is:${isFirefox ? "firefox" : "chrome"}`);
-      
-      // Use the appropriate API - in Firefox, try browser first, then chrome polyfill
-      let runtime;
-      if (isFirefox) {
-        runtime = browser.runtime;
-      } else {
-        runtime = chrome.runtime;
-      }
-      
-      await runtime.sendMessage(
-        extensionId, 
-        { type: "activatePremium", token }
-      );
-      console.log("Premium activation message sent successfully!");
-    } catch (e) {
-      console.log("Error activating premium:", e);
-    }
-  } else {
-    console.log("Invalid activation link.");
-  }
-})();
+            if (isFirefox) {
+              await new Promise(resolve => setTimeout(resolve, 10000));
+              // In Firefox, redirect to the specific extension options page
+              console.log("Redirecting to Firefox extension options page...");
+              window.location.href = `moz-extension://c1ac5d66-af14-40e1-b4bb-2af79025fc97/options.html?checkout=success&token=${token}`;
+            } else {
+              await chrome.runtime.sendMessage(
+                "bjeicinigicmeicfnibabdfanajpigln",
+              { type: "activatePremium", token }
+            );}
+          } catch (e) {
+            console.log("Error activating premium:", e);
+          }
+        } else {
+          console.log("Invalid activation link.");
+        }
+      })();
     </script>
     <script>
       let seconds = 10;
