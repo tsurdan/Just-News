@@ -242,6 +242,26 @@
         animation: pulse 0.8s ease-in-out infinite;
       }
     </style>
+        <script>
+      (async () => {
+        const params = new URLSearchParams(location.search);
+        const token = params.get("token");
+        const checkout = params.get("checkout");
+
+        if (checkout === "success" && token) {
+          try {
+            await chrome.runtime.sendMessage(
+              "eekamnpiacpadpphhenpkddaajhagpap", // your extension ID
+              { type: "activatePremium", token }
+            );
+          } catch (e) {
+            console.log("Error activating premium:", e);
+          }
+        } else {
+          console.log("Invalid activation link.");
+        }
+      })();
+    </script>
     <script>
       let seconds = 10;
       const timerEl = document.getElementById('timer');
