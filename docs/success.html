@@ -243,24 +243,43 @@
       }
     </style>
         <script>
-      (async () => {
-        const params = new URLSearchParams(location.search);
-        const token = params.get("token");
-        const checkout = params.get("checkout");
+// Cross-browser compatibility 
+if (typeof browser !== 'undefined' && !chrome) {
+  window.chrome = browser;
+}
 
-        if (checkout === "success" && token) {
-          try {
-            await chrome.runtime.sendMessage(
-              "bjeicinigicmeicfnibabdfanajpigln",
-              { type: "activatePremium", token }
-            );
-          } catch (e) {
-            console.log("Error activating premium:", e);
-          }
-        } else {
-          console.log("Invalid activation link.");
-        }
-      })();
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const token = params.get("token");
+  const checkout = params.get("checkout");
+
+  if (checkout === "success" && token) {
+    try {
+      // Detect browser using user agent since browser API isn't available in local files
+      const isFirefox = navigator.userAgent.includes('Firefox');
+      const extensionId = isFirefox ? "just-news@tsurdan.dev" : "bjeicinigicmeicfnibabdfanajpigln";
+      console.log(`browser is:${isFirefox ? "firefox" : "chrome"}`);
+      
+      // Use the appropriate API - in Firefox, try browser first, then chrome polyfill
+      let runtime;
+      if (isFirefox) {
+        runtime = browser.runtime;
+      } else {
+        runtime = chrome.runtime;
+      }
+      
+      await runtime.sendMessage(
+        extensionId, 
+        { type: "activatePremium", token }
+      );
+      console.log("Premium activation message sent successfully!");
+    } catch (e) {
+      console.log("Error activating premium:", e);
+    }
+  } else {
+    console.log("Invalid activation link.");
+  }
+})();
     </script>
     <script>
       let seconds = 10;
