@@ -10,7 +10,6 @@
     "https://api.openai.com/*",
     "https://api.anthropic.com/*",
     "https://generativelanguage.googleapis.com/*",
-    "https://tsurdan.github.io/*",
     "https://*.n12.co.il/*",
     "https://*.mako.co.il/*",
     "https://*.ynet.co.il/*",
