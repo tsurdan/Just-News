@@ -1,4 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const checkout = urlParams.get('checkout');
+  const token = urlParams.get('token');
+
   const apiProvider = document.getElementById('apiProvider');
   const apiKey = document.getElementById('apiKey');
   const customPrompt = document.getElementById('customPrompt');
@@ -8,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const resetBtn = document.getElementById('resetBtn');
   const status = document.getElementById('status');
   const characterModes = document.querySelectorAll('.character-mode');
-  
+
   // Character counter elements
   const systemPromptCounter = document.getElementById('systemPromptCounter');
   const customPromptCounter = document.getElementById('customPromptCounter');
@@ -18,7 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectItems = document.getElementById('selectItems');
   const providerIcon = document.getElementById('providerIcon');
   const preferedLang = document.getElementById('preferedLang');
-  
+
   // API key link elements
   const groqLink = document.getElementById('groqLink');
   const openaiLink = document.getElementById('openaiLink');
@@ -58,7 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   let currentCharacterMode = 'robot';
-  
+
   // Store for modified prompts
   let modifiedPrompts = {};
 
@@ -66,7 +70,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateCharCounter(textarea, counter, maxLength) {
     const currentLength = textarea.value.length;
     counter.textContent = `${currentLength}/${maxLength}`;
-    
+
     // Update styling based on usage
     counter.classList.remove('warning', 'danger');
     if (currentLength > maxLength * 0.9) {
@@ -113,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     updateProviderIcon(); // Set initial icon and API key link
-    
+
     // Show only first and last 2 chars of key, mask the rest
     if (data.apiKey && data.apiKey.length > 6) {
       const masked = data.apiKey.slice(0, 3) + "****" + data.apiKey.slice(-2);
@@ -126,16 +130,16 @@ document.addEventListener('DOMContentLoaded', () => {
       apiKey.value = "";
       apiKey.dataset.real = "";
     }
-    
+
     // Set character mode
     currentCharacterMode = data.characterMode || 'robot';
     updateCharacterModeUI();
-    
+
     // Load saved modified prompts if available
     if (data.modifiedPrompts) {
       modifiedPrompts = data.modifiedPrompts;
     }
-    
+
     // Set prompts - check for modified prompts first
     if (modifiedPrompts[currentCharacterMode]) {
       systemPrompt.value = modifiedPrompts[currentCharacterMode].systemPrompt;
@@ -148,14 +152,14 @@ document.addEventListener('DOMContentLoaded', () => {
       customPrompt.value = (typeof data.customPrompt === 'string' && data.customPrompt.trim().length > 0)
         ? data.customPrompt
         : characterConfigs[currentCharacterMode].userPrompt;
-      
+
       // Initialize modified prompts with current values
       modifiedPrompts[currentCharacterMode] = {
         systemPrompt: systemPrompt.value,
         userPrompt: customPrompt.value
       };
     }
-    
+
     // Update character counters
     updateCharCounter(systemPrompt, systemPromptCounter, 1000);
     updateCharCounter(customPrompt, customPromptCounter, 800);
@@ -164,7 +168,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Check premium status and update UI accordingly
   function updatePremiumUI(ipb) {
     const characterModesContainer = document.getElementById('characterModes');
-    
+
     // Get custom prompt elements
     const systemPromptLabel = document.querySelector('label[for="systemPrompt"]');
     const systemPromptTextarea = document.getElementById('systemPrompt');
@@ -172,7 +176,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const customPromptLabel = document.querySelector('label[for="customPrompt"]');
     const customPromptTextarea = document.getElementById('customPrompt');
     const customPromptCounter = document.getElementById('customPromptCounter');
-    
+
     if (ipb) {
       // Premium user - show everything
       characterModesContainer.classList.add('premium-unlocked');
@@ -180,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mode.classList.remove('premium-mode');
         mode.removeAttribute('data-premium');
       });
-      
+
       // Show custom prompt fields
       if (systemPromptLabel) systemPromptLabel.style.display = 'block';
       if (systemPromptTextarea) systemPromptTextarea.style.display = 'block';
@@ -191,7 +195,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       // Non-premium user - hide custom prompts
       characterModesContainer.classList.remove('premium-unlocked');
-      
+
       // Hide custom prompt fields
       if (systemPromptLabel) systemPromptLabel.style.display = 'none';
       if (systemPromptTextarea) systemPromptTextarea.style.display = 'none';
@@ -218,7 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
   characterModes.forEach(mode => {
     mode.addEventListener('click', () => {
       const clickedMode = mode.dataset.mode;
-      
+
       // Check if free user trying to use premium mode
       if (!ipu && clickedMode !== 'robot') {
         // Redirect to premium purchase
@@ -228,10 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Save current prompts before switching
       saveCurrentPrompts();
-      
+
       // Update current mode and selection state
       currentCharacterMode = clickedMode;
-      
+
       // Update UI
       characterModes.forEach(m => {
         if (m.dataset.mode === clickedMode) {
@@ -240,10 +244,10 @@ document.addEventListener('DOMContentLoaded', () => {
           m.classList.remove('selected');
         }
       });
-      
+
       // Load prompts for the new mode
       loadPromptsForMode(currentCharacterMode);
-      
+
       // Load prompts for selected character
       loadPromptsForMode(mode.dataset.mode);
     });
@@ -255,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
       systemPrompt: systemPrompt.value,
       userPrompt: customPrompt.value
     };
-    
+
     // Save to storage immediately
     chrome.storage.sync.set({ modifiedPrompts: modifiedPrompts });
   }
@@ -271,7 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
       systemPrompt.value = config.systemPrompt;
       customPrompt.value = config.userPrompt;
     }
-    
+
     // Update character counters
     updateCharCounter(systemPrompt, systemPromptCounter, 1000);
     updateCharCounter(customPrompt, customPromptCounter, 800);
@@ -280,7 +284,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateCharacterModeUI() {
     characterModes.forEach(mode => {
       const isSelected = mode.dataset.mode === currentCharacterMode;
-      
+
       // Handle selection state
       if (isSelected) {
         mode.classList.add('selected');
@@ -288,7 +292,7 @@ document.addEventListener('DOMContentLoaded', () => {
         mode.classList.remove('selected');
       }
     });
-    
+
     // Load prompts for the current mode
     loadPromptsForMode(currentCharacterMode);
   }
@@ -304,22 +308,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const item = e.target.hasAttribute('data-value') ? e.target : e.target.parentElement;
       const value = item.getAttribute('data-value');
       const text = item.textContent.trim();
-      
+
       // Update hidden input and display
       apiProvider.value = value;
       selectSelected.textContent = text;
-      
+
       // Update icon
       updateProviderIcon();
-      
+
       // Clear API key when provider changes
       apiKey.value = "";
       apiKey.dataset.real = "";
-      
+
       // Close dropdown
       selectItems.classList.add('select-hide');
       selectSelected.classList.remove('select-arrow-active');
-      
+
       // Update selected state
       document.querySelectorAll('.select-items div').forEach(div => {
         div.classList.remove('same-as-selected');
@@ -341,18 +345,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedValue = apiProvider.value;
     iconElement.src = `more icons/${selectedValue}.png`;
     iconElement.alt = selectedValue.charAt(0).toUpperCase() + selectedValue.slice(1);
-    
+
     // Update API key link visibility
     updateApiKeyLink();
   }
-  
+
   function updateApiKeyLink() {
     // Hide all links first
     groqLink.style.display = 'none';
     openaiLink.style.display = 'none';
     claudeLink.style.display = 'none';
     geminiLink.style.display = 'none';
-    
+
     // Show the appropriate link based on selected provider
     const selectedValue = apiProvider.value;
     switch (selectedValue) {
@@ -388,12 +392,12 @@ document.addEventListener('DOMContentLoaded', () => {
   saveBtn.onclick = () => {
     // Save current prompts before validation
     saveCurrentPrompts();
-    
+
     // Validate custom mode prompts
     if (currentCharacterMode === 'custom') {
       const systemPromptValue = systemPrompt.value.trim();
       const customPromptValue = customPrompt.value.trim();
-      
+
       if (systemPromptValue === '' || customPromptValue === '') {
         status.textContent = 'Custom mode requires both prompts to be filled!';
         status.style.color = '#dc3545';
@@ -404,12 +408,12 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
     }
-    
+
     // Save the real key if present, otherwise the visible value
     const keyToSave = apiKey.dataset.real || apiKey.value;
     // Get the default model for the selected provider
     const selectedModel = defaultModels[apiProvider.value];
-    
+
     chrome.storage.sync.set({
       apiProvider: apiProvider.value,
       apiKey: keyToSave,
@@ -449,34 +453,40 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         document.querySelector('[data-value="groq"]').classList.add('same-as-selected');
         updateProviderIcon();
-        
+
         apiKey.value = '';
         apiKey.dataset.real = '';
-        
+
         currentCharacterMode = 'robot';
         updateCharacterModeUI();
-        
+
         // Reset prompts to defaults
         systemPrompt.value = characterConfigs.robot.systemPrompt;
         customPrompt.value = characterConfigs.robot.userPrompt;
-        
+
         // Clear modified prompts
         modifiedPrompts = {};
         modifiedPrompts[currentCharacterMode] = {
           systemPrompt: systemPrompt.value,
           userPrompt: customPrompt.value
         };
-        
+
         // Update character counters
         updateCharCounter(systemPrompt, systemPromptCounter, 1000);
         updateCharCounter(customPrompt, customPromptCounter, 800);
-        
+
         status.textContent = 'Settings Reset!';
         status.style.color = '#4285F4';
         setTimeout(() => status.textContent = '', 2000);
       });
     }
   };
+
+  if (checkout == 'success' && token == 'e23de-32dd3-d2fg3fw-f34f3w') {
+    chrome.storage.sync.set({ premium: true }, () => {
+      console.log('p unlocked via success page!');
+    });
+  }
 
   // Premium button click handler
   const goPremiumBtn = document.getElementById('goPremiumBtn');
