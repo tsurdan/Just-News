@@ -1,10 +1,17 @@
 // limit for non-premium users
 const DAILY_LIMIT = 30;
 
-chrome.action.onClicked.addListener((tab) => {
+if (typeof browser !== 'undefined' && !chrome) {
+  // Firefox uses 'browser' namespace
+  window.chrome = browser;
+}
+const actionAPI = typeof chrome.action !== 'undefined' ? chrome.action : chrome.browserAction;
+
+
+actionAPI.onClicked.addListener((tab) => {
   // Show loading badge
-  chrome.action.setBadgeText({ tabId: tab.id, text: '...' });
-  chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
+  actionAPI.setBadgeText({ tabId: tab.id, text: '...' });
+  actionAPI.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
 const dl = 5 * 6;
@@ -173,7 +180,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true; // Will respond asynchronously
   } else if (request.action === 'headlineChanged') {
     // Remove loading badge when first headline changes
-    chrome.action.setBadgeText({ tabId: sender.tab.id, text: '' });
+    actionAPI.setBadgeText({ tabId: sender.tab.id, text: '' });
     sendResponse({ status: 'badge cleared' });
     return;
   } else if (request.action === 'checkDailyLimit') {

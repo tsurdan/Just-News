@@ -4,6 +4,11 @@ let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
 let ipu = false;
 
+if (typeof browser !== 'undefined' && !chrome) {
+  // Firefox uses 'browser' namespace
+  window.chrome = browser;
+}
+
 // Function to initialize premium status - only called once during startup
 async function initializePremiumStatus() {
   try {
