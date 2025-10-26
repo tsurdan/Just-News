@@ -270,90 +270,126 @@ async function summarizeHeadlines() {
   }
 }
 
-// Function to parse AI response and extract headline and summary
-function parseAIResponse(result) {
-  let newHeadline, summary;
+/**
+ * Simple, logical parser following the 3-step approach
+ * @param {string} cleanResult - Pre-cleaned result string  
+ * @param {string} originalResult - Original result for fallback
+ * @returns {object} - {headline: string, summary: string}
+ */
+function parseAIResponse(cleanResult, originalResult) {
+  const text = originalResult || cleanResult;
   
-  // Clean the result first - remove markdown code blocks if present
-  let cleanResult = result.trim();
-  if (cleanResult.startsWith('```json')) {
-    cleanResult = cleanResult.replace(/```json\s*/, '').replace(/\s*```$/, '');
-  }
-  if (cleanResult.startsWith('```')) {
-    cleanResult = cleanResult.replace(/```\s*/, '').replace(/\s*```$/, '');
-  }
-  
+  // Step 1: Try parsing as valid JSON
   try {
-    // Try to parse as JSON
-    const parsed = JSON.parse(cleanResult);
-    newHeadline = parsed.new_headline || parsed.headline || parsed.title;
-    summary = parsed.article_summary || parsed.summary || parsed.description;
-    
-    // If we don't have both parts, throw error to trigger fallback
-    if (!newHeadline || !summary) {
-      throw new Error('Missing required fields in JSON');
-    }
-    
+    const parsed = JSON.parse(text);
+    return {
+      headline: cleanText(parsed.new_headline || parsed.headline || parsed.title),
+      summary: cleanText(parsed.article_summary || parsed.summary || parsed.description)
+    };
   } catch (e) {
-    // Enhanced fallback: try to extract JSON from text with better patterns
-    const jsonPatterns = [
-      /\{[^{}]*"new_headline"[^{}]*"article_summary"[^{}]*\}/s,
-      /\{[^{}]*"headline"[^{}]*"summary"[^{}]*\}/s,
-      /\{.*?"new_headline".*?"article_summary".*?\}/s,
-      /\{.*?"headline".*?"summary".*?\}/s,
-      /\{[\s\S]*?"new_headline"[\s\S]*?"article_summary"[\s\S]*?\}/,
-      /\{[\s\S]*?"headline"[\s\S]*?"summary"[\s\S]*?\}/
-    ];
-    
-    let jsonFound = false;
-    for (const pattern of jsonPatterns) {
-      const match = result.match(pattern);
-      if (match) {
-        try {
-          const extracted = JSON.parse(match[0]);
-          newHeadline = extracted.new_headline || extracted.headline || extracted.title;
-          summary = extracted.article_summary || extracted.summary || extracted.description;
-          
-          if (newHeadline && summary) {
-            jsonFound = true;
-            break;
-          }
-        } catch (e2) {
-          continue; // Try next pattern
-        }
-      }
+    // Step 1 failed, continue to step 2
+  }
+  
+  // Step 2: Try fixing the JSON and parsing
+  const fixedJSON = tryFixJSON(text);
+  if (fixedJSON) {
+    try {
+      const parsed = JSON.parse(fixedJSON);
+      return {
+        headline: cleanText(parsed.new_headline || parsed.headline || parsed.title),
+        summary: cleanText(parsed.article_summary || parsed.summary || parsed.description)
+      };
+    } catch (e) {
+      // Step 2 failed, continue to step 3
+    }
+  }
+  
+  // Step 3: Extract fields using text structure and keywords
+  const headline = extractByKeywords(text, ['new_headline', 'headline', 'title']);
+  const summary = extractByKeywords(text, ['article_summary', 'summary', 'description']);
+  
+  if (headline) {
+    return {
+      headline: cleanText(headline),
+      summary: cleanText(summary) || 'Summary not available'
+    };
+  }
+  
+  throw new Error('Could not extract headline from AI response');
+}
+
+/**
+ * Clean text by removing technical characters but keeping content
+ */
+function cleanText(text) {
+  if (!text || typeof text !== 'string') return '';
+  
+  return text
+    .replace(/\\"/g, '"')      // Fix escaped quotes
+    .replace(/\\n/g, ' ')      // Fix escaped newlines  
+    .replace(/\\\\/g, '\\')    // Fix double backslashes
+    .replace(/\\'/g, "'")      // Fix escaped apostrophes
+    .trim();
+}
+
+/**
+ * Try to fix malformed JSON
+ */
+function tryFixJSON(text) {
+  let fixed = text.trim();
+  
+  // Add missing closing quote if needed
+  if (fixed.includes('"new_headline"') && !fixed.endsWith('}')) {
+    // Count quotes to see if we need to close a string
+    const quotes = (fixed.match(/"/g) || []).length;
+    if (quotes % 2 !== 0) {
+      fixed += '"';
     }
     
-    // If no valid JSON found, skip this headline to prevent showing raw JSON
-    if (!jsonFound) {
-      throw new Error('Unable to parse AI response - skipping headline');
+    // Add missing closing brace
+    if (!fixed.endsWith('}')) {
+      fixed += '}';
     }
   }
   
-  // Validate headline doesn't look like JSON
-  if (newHeadline.includes('{') || newHeadline.includes('"new_headline"')) {
-    throw new Error('Headline appears to be malformed JSON - skipping');
+  return fixed;
+}
+
+/**
+ * Extract field values using keyword-based text parsing
+ */
+function extractByKeywords(text, keywords) {
+  for (const keyword of keywords) {
+    // Look for: "keyword": "value"
+    const pattern1 = new RegExp(`"${keyword}"\\s*:\\s*"([^"]*(?:\\\\.[^"]*)*)"`, 'i');
+    const match1 = text.match(pattern1);
+    if (match1) return match1[1];
+    
+    // Look for truncated: "keyword": "value without closing quote
+    const pattern2 = new RegExp(`"${keyword}"\\s*:\\s*"([^"]*(?:\\\\.[^"]*)*)(?:[^"]*)?$`, 'i');
+    const match2 = text.match(pattern2);
+    if (match2) return match2[1];
+    
+    // Look for: keyword: value (without quotes)
+    const pattern3 = new RegExp(`${keyword}\\s*:\\s*([^,}\\n]+)`, 'i');
+    const match3 = text.match(pattern3);
+    if (match3) return match3[1];
   }
   
-  // Clean and validate the headline
-  if (typeof newHeadline !== 'string' || newHeadline.trim() === '') {
-    throw new Error('Invalid headline format - skipping');
-  }
-  
-  const sanitizedHeadline = newHeadline.replace(/[\r\n]+/g, ' ').trim();
-  
-  // Clean the summary
-  if (typeof summary === 'string') {
-    summary = summary.replace(/[\r\n]+/g, ' ').trim();
-    // Limit summary length
-    if (summary.length > 300) {
-      summary = summary.substring(0, 297) + '...';
+  return null;
+}
+
+/**
+ * Helper function to extract content using multiple patterns
+ */
+function extractWithPatterns(text, patterns) {
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    if (match && match[1]) {
+      return match[1].trim();
     }
-  } else {
-    summary = 'Summary unavailable';
   }
-  
-  return { headline: sanitizedHeadline, summary: summary };
+  return null;
 }
 
 

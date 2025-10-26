@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     groq: 'meta-llama/llama-4-scout-17b-16e-instruct',
     openai: 'gpt-3.5-turbo',
     claude: 'claude-3-opus',
-    gemini: 'gemini-1.5-flash-latest'
+    gemini: 'gemini-2.5-flash-lite'
   };
 
   // Character mode configurations
