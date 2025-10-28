@@ -342,7 +342,9 @@ function parseAIResponseOld(result) {
   
   let sanitizedHeadline = newHeadline
     .replace(/[\r\n]+/g, ' ')      // Replace newlines with spaces
-    .replace(/['"\\]/g, '')        // Remove all quotes and backslashes
+    .replace(/\\"/g, '"')          // Fix escaped quotes first
+    .replace(/"/g, "'")            // Replace double quotes with single quotes
+    .replace(/\\/g, '')            // Remove remaining backslashes
     .trim();
   
   
@@ -373,7 +375,7 @@ function parseAIResponseNew(result){
     const parsed = JSON.parse(text);
     if (parsed.new_headline || parsed.headline || parsed.title) {
       return {
-        headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/['"\\]/g, ''),
+        headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
         summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
       };
     }
@@ -392,7 +394,7 @@ function parseAIResponseNew(result){
   try {
     const parsed = JSON.parse(cleanedText);
     if (parsed.new_headline || parsed.headline || parsed.title) {
-      const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/['"\\]/g, '');
+      const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, '');
       return {
         headline: headline,
         summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
@@ -413,7 +415,7 @@ function parseAIResponseNew(result){
     try {
       const parsed = JSON.parse(fixedText);
       if (parsed.new_headline || parsed.headline || parsed.title) {
-        const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/['"\\]/g, '');
+        const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, '');
         return {
           headline: headline,
           summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
@@ -431,7 +433,7 @@ function parseAIResponseNew(result){
       const parsed = JSON.parse(jsonMatch[0]);
       if (parsed.new_headline || parsed.headline || parsed.title) {
         return {
-          headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/['"\\]/g, ''),
+          headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
           summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
         };
       }
@@ -447,7 +449,7 @@ function parseAIResponseNew(result){
     const summary = extractSecondFieldValue(text, 'article_summary');
 
     return {
-      headline: headline.replace(/['"\\]/g, ''),
+      headline: headline.replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
       summary: summary || 'Summary not available'
     };
   }
