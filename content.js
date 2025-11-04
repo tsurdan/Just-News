@@ -351,10 +351,6 @@ function parseAIResponseOld(result) {
   // Clean the summary
   if (typeof summary === 'string') {
     summary = summary.replace(/[\r\n]+/g, ' ').trim();
-    // Limit summary length
-    if (summary.length > 300) {
-      summary = summary.substring(0, 297) + '...';
-    }
   } else {
     summary = 'Summary unavailable';
   }
