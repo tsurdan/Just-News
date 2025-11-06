@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Just News",
-  "version": "3.0.2",
+  "version": "3.0.4",
   "description": "Replaces clickbait headlines with informative summaries",
   "permissions": [
     "activeTab",
@@ -100,7 +100,9 @@
     "https://*.deutschlandfunk.de/*",
     "https://*.heise.de/*",
     "https://*.golem.de/*",
-    "https://tsurdan.github.io/*"
+    "https://tsurdan.github.io/*",
+    "https://*.c14.co.il/*"
+
   ],
   "browser_action": {
     "default_title": "Summarize Headlines, Remove clickbait"
@@ -140,7 +142,7 @@
         "https://*.israelnationalnews.com/*",
         "https://*.jewishpress.com/*",
         "https://*.kikar.co.il/*",
-        "https://*.now14.co.il/*",
+        "https://*.c14.co.il/*",
         "https://*.kan.org.il/*",
         "https://*.nytimes.com/*",
         "https://*.washingtonpost.com/*",
@@ -236,7 +238,12 @@
   "browser_specific_settings": {
     "gecko": {
       "id": "just-news@tsurdan.dev",
-      "strict_min_version": "109.0"
+      "strict_min_version": "109.0",
+      "data_collection_permissions": {
+        "required": [
+          "websiteContent"
+        ]
+      }
     }
   }
 }

@@ -98,7 +98,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (apiProvider === "claude") {
       body = JSON.stringify({
         model: model,
-        max_tokens: 150,
+        max_tokens: 300,
         system: systemPrompt,
         messages: [{ role: "user", content: prompt }]
       });
@@ -127,7 +127,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           { role: "user", content: prompt }
         ],
         temperature: 0.0,
-        max_tokens: 150,
+        max_tokens: 300,
         top_p: 0.4,
         frequency_penalty: 0.0,
         presence_penalty: 0.0

@@ -276,7 +276,7 @@ async function summarizeHeadlines() {
 }
 
 // Function to parse AI response and extract headline and summary
-function parseAIResponse(result) {
+function parseAIResponseOld(result) {
   let newHeadline, summary;
   
   // Clean the result first - remove markdown code blocks if present
@@ -345,20 +345,130 @@ function parseAIResponse(result) {
     throw new Error('Invalid headline format - skipping');
   }
   
-  const sanitizedHeadline = newHeadline.replace(/[\r\n]+/g, ' ').trim();
+  let sanitizedHeadline = newHeadline
+    .replace(/[\r\n]+/g, ' ')      // Replace newlines with spaces
+    .replace(/\\"/g, '"')          // Fix escaped quotes first
+    .replace(/"/g, "'")            // Replace double quotes with single quotes
+    .replace(/\\/g, '')            // Remove remaining backslashes
+    .trim();
+  
   
   // Clean the summary
   if (typeof summary === 'string') {
     summary = summary.replace(/[\r\n]+/g, ' ').trim();
-    // Limit summary length
-    if (summary.length > 300) {
-      summary = summary.substring(0, 297) + '...';
-    }
   } else {
     summary = 'Summary unavailable';
   }
   
   return { headline: sanitizedHeadline, summary: summary };
+}
+
+function parseAIResponseNew(result){
+  // Handle the case where result might be an object with a 'text' property
+  const text = typeof result === 'string' ? result : result?.text || result;
+  
+  if (!text) {
+    throw new Error('No text to parse');
+  }
+  
+  // Step 1: Try as valid JSON directly
+  try {
+    const parsed = JSON.parse(text);
+    if (parsed.new_headline || parsed.headline || parsed.title) {
+      return {
+        headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
+        summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
+      };
+    }
+  } catch (e) {
+    console.log('Step 1 failed:', e.message);
+  }
+  
+  // Step 2: Clean up markdown and try parsing JSON
+  let cleanedText = text
+    .replace(/```json\s*/g, '')  // Remove ```json
+    .replace(/```\s*/g, '')      // Remove closing ```
+    .replace(/,\s*}/g, '}')      // Fix trailing commas
+    .trim();
+  
+  // Try parsing the cleaned text
+  try {
+    const parsed = JSON.parse(cleanedText);
+    if (parsed.new_headline || parsed.headline || parsed.title) {
+      const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, '');
+      return {
+        headline: headline,
+        summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
+      };
+    }
+  } catch (e) {
+    // JSON is malformed, try to fix it by adding missing closing quote and brace
+    let fixedText = cleanedText;
+    if (!fixedText.endsWith('}')) {
+      // Add missing closing quote if the last character isn't a quote
+      if (!fixedText.endsWith('"')) {
+        fixedText += '"';
+      }
+      // Add missing closing brace
+      fixedText += '}';
+    }
+    
+    try {
+      const parsed = JSON.parse(fixedText);
+      if (parsed.new_headline || parsed.headline || parsed.title) {
+        const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, '');
+        return {
+          headline: headline,
+          summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
+        };
+      }
+    } catch (e2) {
+      // Still failed, continue to next step
+    }
+  }
+    
+  // Step 3: Try to find and parse just the JSON part
+  const jsonMatch = cleanedText.match(/\{.*\}/s);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+      if (parsed.new_headline || parsed.headline || parsed.title) {
+        return {
+          headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
+          summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
+        };
+      }
+    } catch (e) {
+      console.log('Step 3 failed:', e.message);
+    }
+  }
+  
+  // Step 4: Manual text extraction as absolute last resort
+  const headline = extractFirstFieldValue(text, 'new_headline');
+  
+  if (headline) {
+    const summary = extractSecondFieldValue(text, 'article_summary');
+
+    return {
+      headline: headline.replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
+      summary: summary || 'Summary not available'
+    };
+  }
+  
+  throw new Error('Could not extract headline from AI response');
+}
+
+/**
+ * Robust 3-step parser that handles quotes and slashes properly
+ * @param {string} result - Pre-cleaned result string
+ * @returns {object} - {headline: string, summary: string}
+ */
+function parseAIResponse(result) {
+  try {
+    return parseAIResponseOld(result);
+  } catch {
+    return parseAIResponseNew(result);
+  }
 }
 
 
