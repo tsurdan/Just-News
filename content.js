@@ -142,15 +142,37 @@ async function summarizeHeadlines() {
 
   //filter out processed headlines
   headlines = headlines.filter(headline => !headline.textContent.includes('~'));
+  
+  //filter out already processed elements (with our class)
+  headlines = headlines.filter(headline => !headline.classList.contains('just-news-processed-headline'));
 
-  //filter out duplicated headlines
+  //filter out duplicated headlines and nested elements
   const uniqueHeadlines = new Set();
+  const processedElements = new Set();
   headlines = headlines.filter(headline => {
+    // Skip if this element or its parent/child was already processed
+    if (processedElements.has(headline)) return false;
+    
+    // Check if any parent element was already selected
+    let parent = headline.parentElement;
+    while (parent) {
+      if (processedElements.has(parent)) return false;
+      parent = parent.parentElement;
+    }
+    
+    // Check if any child element was already selected
+    const descendants = headline.querySelectorAll('*');
+    for (let descendant of descendants) {
+      if (processedElements.has(descendant)) return false;
+    }
+    
     const text = headline.textContent.trim();
     if (uniqueHeadlines.has(text)) {
       return false;
     }
+    
     uniqueHeadlines.add(text);
+    processedElements.add(headline);
     return true;
   });
 
@@ -173,7 +195,7 @@ async function summarizeHeadlines() {
   });
 
   // Filter out subject headlines
-  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 3);
+  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 2);
 
   // Sort headlines by font size in descending order
   headlines.sort((a, b) => {
@@ -189,7 +211,7 @@ async function summarizeHeadlines() {
     if (rateLimitHit) break;
     const headline = headlines[i];
     const sourceHeadline = headline.textContent;
-    const articleUrl = headline.href || headline.closest('a')?.href;
+    const articleUrl = headline.href || headline.closest('a')?.href || headline.querySelector('a')?.href;
     if (articleUrl) {
       promises.push(
         fetchSummary(sourceHeadline, articleUrl, apiOptions)
@@ -531,11 +553,37 @@ function extractSecondFieldValue(text, fieldName) {
 
 
 function typeHeadline(element, text) {
+  // Mark the element as processed immediately to prevent double-processing
+  element.classList.add('just-news-processed-headline');
+  
+  // Find the actual text element to replace
+  // Priority: span with text, direct text node, or the element itself
+  let targetElement = element;
+  
+  // Look for text-containing spans first
+  const textSpan = element.querySelector('span');
+  if (textSpan && textSpan.textContent.trim()) {
+    targetElement = textSpan;
+  } else {
+    // Check if the element contains a link with text
+    const link = element.querySelector('a');
+    if (link && link.textContent.trim()) {
+      // If the link has a span inside, target that
+      const linkSpan = link.querySelector('span');
+      if (linkSpan && linkSpan.textContent.trim()) {
+        targetElement = linkSpan;
+      } else {
+        // Target the link directly
+        targetElement = link;
+      }
+    }
+  }
+  
   let index = 0;
-  element.textContent = '';
+  targetElement.textContent = '';
   const interval = setInterval(() => {
     if (index < text.length) {
-      element.textContent += text[index];
+      targetElement.textContent += text[index];
       index++;
     } else {
       clearInterval(interval);
@@ -549,11 +597,11 @@ function typeHeadline(element, text) {
 
 // Setup tooltip functionality for a processed headline
 function setupTooltip(element) {
-  element.classList.add('just-news-processed-headline');
+  // Element is already marked as processed by typeHeadline function
   
   let tooltip = null;
   let tooltipTimeout = null;
-  const articleUrl = element.href || element.closest('a')?.href;
+  const articleUrl = element.href || element.closest('a')?.href || element.querySelector('a')?.href;
   
   if (!articleUrl) return;
   
