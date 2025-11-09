@@ -195,7 +195,7 @@ async function summarizeHeadlines() {
   });
 
   // Filter out subject headlines
-  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 2);
+  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 3);
 
   // Sort headlines by font size in descending order
   headlines.sort((a, b) => {
