@@ -86,4 +86,3 @@ Please open issues for bugs or feature suggestions. Let's make the news readable
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).
-Demo image credit to [hotpot.ai](https://hotpot.ai/templates/chrome-promotional-marquee) 
