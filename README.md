@@ -5,7 +5,8 @@
 **Just News** is a Chrome extension that automatically replaces misleading or clickbait news headlines with clear, factual, and objective alternatives. It enhances your browsing experience by letting you know the essence of an article—without needing to click.
 
 ---
-![KP1mFZOFQaGl_1280_800](https://github.com/user-attachments/assets/ae2a1c74-91b9-4a77-981f-262870f9729a)
+<img width="1280" height="800" alt="new-fox" src="https://github.com/user-attachments/assets/83dfcf19-a16f-4ab6-8617-f23969abd2a9" />
+
 
 ## 🧠 How It Works
 
