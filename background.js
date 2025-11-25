@@ -11,7 +11,11 @@ const actionAPI = typeof chrome.action !== 'undefined' ? chrome.action : chrome.
 actionAPI.onClicked.addListener((tab) => {
   // Show loading badge
   actionAPI.setBadgeText({ tabId: tab.id, text: '...' });
-  actionAPI.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
+  try {
+    actionAPI.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
+  } catch (e) {
+    // not working in android firefox
+  }
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
 const dl = 5 * 6;
