@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Just News",
-  "version": "3.0.4",
+  "version": "3.0.5",
   "description": "Replaces clickbait headlines with informative summaries",
   "permissions": [
     "activeTab",
