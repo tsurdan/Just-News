@@ -473,11 +473,37 @@ function parseAIResponse(result) {
 
 
 function typeHeadline(element, text) {
+  // Mark the element as processed immediately to prevent double-processing
+  element.classList.add('just-news-processed-headline');
+  
+  // Find the actual text element to replace
+  // Priority: span with text, direct text node, or the element itself
+  let targetElement = element;
+  
+  // Look for text-containing spans first
+  const textSpan = element.querySelector('span');
+  if (textSpan && textSpan.textContent.trim()) {
+    targetElement = textSpan;
+  } else {
+    // Check if the element contains a link with text
+    const link = element.querySelector('a');
+    if (link && link.textContent.trim()) {
+      // If the link has a span inside, target that
+      const linkSpan = link.querySelector('span');
+      if (linkSpan && linkSpan.textContent.trim()) {
+        targetElement = linkSpan;
+      } else {
+        // Target the link directly
+        targetElement = link;
+      }
+    }
+  }
+  
   let index = 0;
-  element.textContent = '';
+  targetElement.textContent = '';
   const interval = setInterval(() => {
     if (index < text.length) {
-      element.textContent += text[index];
+      targetElement.textContent += text[index];
       index++;
     } else {
       clearInterval(interval);
@@ -491,11 +517,11 @@ function typeHeadline(element, text) {
 
 // Setup tooltip functionality for a processed headline
 function setupTooltip(element) {
-  element.classList.add('just-news-processed-headline');
+  // Element is already marked as processed by typeHeadline function
   
   let tooltip = null;
   let tooltipTimeout = null;
-  const articleUrl = element.href || element.closest('a')?.href;
+  const articleUrl = element.href || element.closest('a')?.href || element.querySelector('a')?.href;
   
   if (!articleUrl) return;
   
@@ -588,7 +614,6 @@ function positionTooltip(element, tooltip, mouseEvent = null) {
   tooltip.style.position = 'fixed';
   tooltip.style.zIndex = '10000';
 }
-
 async function fetchSummary(sourceHeadline, url, options) {
   let summary = "";
   try {
