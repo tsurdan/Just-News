@@ -254,10 +254,11 @@
             console.log(`browser is:${isFirefox ? "firefox" : "chrome"}`);
 
             if (isFirefox) {
-              await new Promise(resolve => setTimeout(resolve, 10000));
+                //In firefox chrome.runtime cannot run from website, so it's move to contents.js
+              //await new Promise(resolve => setTimeout(resolve, 10000));
               // In Firefox, redirect to the specific extension options page
-              console.log("Redirecting to Firefox extension options page...");
-              window.location.href = `moz-extension://ff7530c7-d5f0-4b2f-9978-2ff9d9412e1c/options.html?checkout=success&token=${token}`;
+              //console.log("Redirecting to Firefox extension options page...");
+              //.location.href = `moz-extension://ff7530c7-d5f0-4b2f-9978-2ff9d9412e1c/options.html?checkout=success&token=${token}`;
             } else {
               await chrome.runtime.sendMessage(
                 "bjeicinigicmeicfnibabdfanajpigln",
