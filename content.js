@@ -28,7 +28,7 @@ function ipb() {
 
 async function initializeContentScript() {
   if (isInitialized) return;
-    if (window.location.href.includes("https://tsurdan.github.io/Just-News/success.html")){
+    if (window.location.href.includes("tsurdan.github.io/Just-News/success.html")){
         (async () => {
             const params = new URLSearchParams(location.search);
             const token = params.get("token");

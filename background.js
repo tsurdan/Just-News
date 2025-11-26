@@ -1,5 +1,6 @@
 // limit for non-premium users
 const DAILY_LIMIT = 30;
+const API = chrome ?? browser;
 
 if (typeof browser !== 'undefined' && !chrome) {
   // Firefox uses 'browser' namespace
@@ -234,18 +235,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 const REQUIRED_TOKEN = 'e23de-32dd3-d2fg3fw-f34f3w';
 
-chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  if (message.type === "activatePremium" && message.token == REQUIRED_TOKEN) {
-        chrome.storage.sync.set({ premium: true }, () => {
-          console.log('Premium unlocked via success page!');
+API.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    console.log("get message", message);
+    if (message.type === "activatePremium" && message.token == REQUIRED_TOKEN) {
+
+        API.storage.sync.set({ premium: true }, () => {
+            console.log('Premium unlocked!');
         });
 
         setTimeout(() => {
-          chrome.runtime.openOptionsPage(() => {
-            console.log('Options page opened after premium unlock');
-          });
+            API.runtime.openOptionsPage();
         }, 10000);
-    return true;
-  }
+
+        return true;
+    }
+    else if (!!message.token == REQUIRED_TOKEN){
+        console.log("message.token wrong");
+    }
 });
 
