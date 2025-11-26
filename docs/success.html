@@ -257,7 +257,7 @@
               await new Promise(resolve => setTimeout(resolve, 10000));
               // In Firefox, redirect to the specific extension options page
               console.log("Redirecting to Firefox extension options page...");
-              window.location.href = `moz-extension://3d2aae0a-bb01-4f04-ae0a-acc5aae904de/options.html?checkout=success&token=${token}`;
+              window.location.href = `moz-extension://ff7530c7-d5f0-4b2f-9978-2ff9d9412e1c/options.html?checkout=success&token=${token}`;
             } else {
               await chrome.runtime.sendMessage(
                 "bjeicinigicmeicfnibabdfanajpigln",
