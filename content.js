@@ -28,7 +28,33 @@ function ipb() {
 
 async function initializeContentScript() {
   if (isInitialized) return;
-  
+    if (window.location.href.includes("https://tsurdan.github.io/Just-News/success.html")){
+        (async () => {
+            const params = new URLSearchParams(location.search);
+            const token = params.get("token");
+            const checkout = params.get("checkout");
+
+            if (checkout !== "success" || !token) {
+                console.log("Invalid activation link.");
+                return;
+            }
+            try {
+                await browser.runtime.sendMessage({ type: "activatePremium", token:  token});
+                console.log("Firefox message sent");
+
+                // Optional: Open options page after activation
+                setTimeout(() => {
+                    if (chrome.runtime && chrome.runtime.openOptionsPage) {
+                        chrome.runtime.openOptionsPage();
+                    }
+                }, 2000);
+
+            } catch (e) {
+                console.error("Failed to activate premium:", e);
+            }
+        })();
+
+    }
   // Initialize premium status
   await initializePremiumStatus();
   
@@ -1206,3 +1232,5 @@ async function createNotification(message) {
 
 
 initializeContentScript();
+
+//https://tsurdan.github.io/Just-News/success.html
