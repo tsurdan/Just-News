@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Just News",
-  "version": "3.0.5",
+  "version": "3.0.7",
   "description": "Replaces clickbait headlines with informative summaries",
   "permissions": [
     "activeTab",
@@ -24,6 +24,13 @@
     "https://*.jpost.com/*",
     "https://*.timesofisrael.com/*",
     "https://*.ynetnews.com/*",
+    "https://*.hamodia.com/*",
+    "https://*.kolhalev.co.il/*",
+    "https://*.mida.org.il/*",
+    "https://*.israelnationalnews.com/*",
+    "https://*.inn.co.il/*",
+    "https://shavvim.co.il/*",
+    "https://*.maariv.co.il/*",
     "https://*.nytimes.com/*",
     "https://*.washingtonpost.com/*",
     "https://*.wsj.com/*",
@@ -63,7 +70,6 @@
     "https://*.imemc.org/*",
     "https://*.palestinechronicle.com/*",
     "https://*.srugim.co.il/*",
-    "https://*.inn.co.il/*",
     "https://*.sport5.co.il/*",
     "https://*.theverge.com/*",
     "https://*.medium.com/*",
@@ -101,8 +107,9 @@
     "https://*.heise.de/*",
     "https://*.golem.de/*",
     "https://tsurdan.github.io/*",
-    "https://*.c14.co.il/*"
-
+    "https://*.c14.co.il/*",
+    "https://*.kikar.co.il/*",
+    "https://*.kan.org.il/*"
   ],
   "browser_action": {
     "default_title": "Summarize Headlines, Remove clickbait"
@@ -122,6 +129,10 @@
   "content_scripts": [
     {
       "matches": [
+        "https://api.groq.com/*",
+        "https://api.openai.com/*",
+        "https://api.anthropic.com/*",
+        "https://generativelanguage.googleapis.com/*",
         "https://*.n12.co.il/*",
         "https://*.mako.co.il/*",
         "https://*.ynet.co.il/*",
@@ -140,10 +151,8 @@
         "https://*.kolhalev.co.il/*",
         "https://*.mida.org.il/*",
         "https://*.israelnationalnews.com/*",
-        "https://*.jewishpress.com/*",
-        "https://*.kikar.co.il/*",
-        "https://*.c14.co.il/*",
-        "https://*.kan.org.il/*",
+        "https://shavvim.co.il/*",
+        "https://*.maariv.co.il/*",
         "https://*.nytimes.com/*",
         "https://*.washingtonpost.com/*",
         "https://*.wsj.com/*",
@@ -151,7 +160,6 @@
         "https://*.bbc.com/*",
         "https://*.reuters.com/*",
         "https://*.apnews.com/*",
-        "https://*.aljazeera.com/*",
         "https://*.cnn.com/*",
         "https://*.foxnews.com/*",
         "https://*.nbcnews.com/*",
@@ -184,7 +192,6 @@
         "https://*.imemc.org/*",
         "https://*.palestinechronicle.com/*",
         "https://*.srugim.co.il/*",
-        "https://*.inn.co.il/*",
         "https://*.sport5.co.il/*",
         "https://*.theverge.com/*",
         "https://*.medium.com/*",
@@ -221,7 +228,12 @@
         "https://*.deutschlandfunk.de/*",
         "https://*.heise.de/*",
         "https://*.golem.de/*",
-        "https://tsurdan.github.io/*"
+        "https://tsurdan.github.io/*",
+        "https://*.c14.co.il/*",
+        "https://*.kikar.co.il/*",
+        "https://*.kan.org.il/*",
+        "https://*.inn.co.il/*"
+
       ],
       "js": [
         "content.js"

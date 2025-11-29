@@ -220,7 +220,7 @@ async function summarizeHeadlines() {
     if (rateLimitHit) break;
     const headline = headlines[i];
     const sourceHeadline = headline.textContent;
-    const articleUrl = headline.href || headline.closest('a')?.href;
+    const articleUrl = headline.href || headline.closest('a')?.href || headline.querySelector('a')?.href;
     if (articleUrl) {
       promises.push(
         fetchSummary(sourceHeadline, articleUrl, apiOptions)
