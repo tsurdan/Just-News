@@ -72,7 +72,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     // Set baseURL based on provider
     let baseURL;
     if (apiProvider === "groq") {
-      baseURL = "https://api.groq.com/openai/v1/chat/completions";
+      baseURL = "https://just-news-proxy.tzurda3.workers.dev";
     } else if (apiProvider === "openai") {
       baseURL = "https://api.openai.com/v1/chat/completions";
     } else if (apiProvider === "claude") {
@@ -81,7 +81,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // Gemini API key is in the URL as ?key=API_KEY
       baseURL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     } else {
-      baseURL = "https://api.groq.com/openai/v1/chat/completions";
+      baseURL = "https://just-news-proxy.tzurda3.workers.dev";
     }
 
     let prompt = request.prompt;
@@ -127,7 +127,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
       headers = {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
+        "X-JustNews-Key": ``
       };
     }
 

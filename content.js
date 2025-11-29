@@ -111,10 +111,10 @@ async function summarizeHeadlines() {
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     preferedLang = settings.preferedLang || "english";
-    if (!apiKey) {
-      await promptForApiKey('Enter key (one-time setup)');
-      return;
-    }
+    // if (!apiKey) {
+    //   await promptForApiKey('Enter key (one-time setup)');
+    //   return;
+    // }
   } catch (error) {
     await createNotification('Error checking API key. Please try again.');
   }
