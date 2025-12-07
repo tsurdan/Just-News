@@ -1,8 +1,18 @@
+// TODO: Optimize headline selection process
+// TODO: Improve error handling and user notifications
+// TODO: Move rate limiting logic to server side
+// TODO: Move premium handling to server side
+// TODO: Feature of headline selection by user
+// TODO: Add option to automatically replace headlines when entering news website
+// TODO: Support in-article title replacement
+// TODO: Implement some caching mechanism
+
 let premium = false; // Track premium status
 let isInitialized = false;
 let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
 let ipu = false;
+let isLoginPromptShown = false; // Prevent duplicate login prompts
 
 // Function to initialize premium status - only called once during startup
 async function initializePremiumStatus() {
@@ -41,6 +51,10 @@ async function initializeContentScript() {
       ipu = request.ipb;
       console.log('Premium status updated:', ipu);
       sendResponse({status: 'premium status updated'});
+    } else if (request.action === 'promptLogin') {
+      // Show login prompt
+      showLoginPrompt();
+      sendResponse({status: 'login prompt shown'});
     }
     return true;
   });
@@ -89,8 +103,6 @@ function addTooltipStyles() {
 }
 
 async function summarizeHeadlines() {
-  let apiKey = "";
-  let apiProvider = "groq";
   let model = "";
   let customPrompt = "";
   let systemPrompt = "";
@@ -104,21 +116,15 @@ async function summarizeHeadlines() {
 - Be objective and informative`;
 
   try {
-    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang']);
-    apiKey = settings.apiKey || "";
-    apiProvider = settings.apiProvider || "groq";
+    const settings = await chrome.storage.sync.get(['model', 'customPrompt', 'systemPrompt', 'preferedLang']);
     model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     preferedLang = settings.preferedLang || "english";
-    // if (!apiKey) {
-    //   await promptForApiKey('Enter key (one-time setup)');
-    //   return;
-    // }
   } catch (error) {
-    await createNotification('Error checking API key. Please try again.');
+    await createNotification('Error loading settings. Please try again.');
   }
-  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
+  const apiOptions = {"model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
   
   // Check daily rate limit with background script
   if (!ipb()) {
@@ -280,8 +286,6 @@ async function summarizeHeadlines() {
         let msg = e.reason.message || '';
         if (msg.includes('Error extracting article content')) {
           errorTypes.add('Error extracting article content');
-        } else if (msg.includes('Invalid API key')) {
-          errorTypes.add('Invalid API key');
         } else {
           errorTypes.add(msg.split(',')[0]);
         }
@@ -763,7 +767,7 @@ async function fetchContent(url) {
 }
 
 async function summarizeContnet(sourceHeadline, content, options) {
-  const { apiKey, apiProvider, model, customPrompt, systemPrompt, preferedLang } = options;
+  const { model, customPrompt, systemPrompt, preferedLang } = options;
   
   // System-controlled instructions that users cannot modify
   const systemInstructions = `
@@ -785,310 +789,22 @@ Do not add any text before or after the JSON. Only return the JSON object.`;
     action: 'AIcall',
     sourceHeadline,
     prompt,
-    apiKey,
     model,
-    systemPrompt,
-    apiProvider // <-- pass provider
+    systemPrompt
   });
   if (!response || response?.error || !response.summary) {
-    throw new Error('Error fetching AI summary ' + response?.error);
+    const errorMsg = response?.error || 'Unknown error';
+    // Check if authentication failed - prompt user to login again (only once)
+    if (errorMsg.includes('Authentication failed') || errorMsg.includes('sign in again')) {
+      if (!isLoginPromptShown) {
+        isLoginPromptShown = true;
+        showLoginPrompt();
+      }
+      throw new Error('Session expired. Please sign in.');
+    }
+    throw new Error('Error fetching AI summary ' + errorMsg);
   }
   return response.summary;
-}
-
-async function getApiKey() {
-  const result = await chrome.storage.sync.get(['apiKey']);
-  return result.apiKey;
-}
-
-function createApiKeyPrompt(message, currentKey = '') {
-  const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    backdrop-filter: blur(3px);
-    direction: ltr;
-  `;
-
-  const promptBox = document.createElement('div');
-  promptBox.style.cssText = `
-    background: white;
-    padding: 32px 28px;
-    border-radius: 16px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
-    width: 90%;
-    max-width: 480px;
-    box-sizing: border-box;
-    animation: slideIn 0.3s ease;
-    max-height: 90vh;
-    overflow-y: auto;
-    direction: ltr;
-    text-align: left;
-  `;
-
-  const title = document.createElement('h3');
-  title.textContent = '🚀 Quick Free Setup Required';
-  title.style.cssText = `
-    text-align: center;
-    font-size: 18px;
-    color: #333;
-    font-weight: 700;
-    margin-bottom: 16px;
-    line-height: 1.3;
-  `;
-
-  const stepsContainer = document.createElement('div');
-  stepsContainer.style.cssText = `
-    margin-bottom: 24px;
-    padding: 16px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border-left: 4px solid #4285F4;
-    direction: ltr;
-  `;
-
-  // Create step 1 - Sign up (clickable)
-  const step1 = document.createElement('a');
-  step1.href = 'https://console.groq.com/';
-  step1.target = '_blank';
-  step1.style.cssText = `
-    display: flex;
-    align-items: start;
-    font-size: 14px;
-    color: #333;
-    direction: ltr;
-    text-decoration: none;
-    margin-bottom: 12px;
-    padding: 12px;
-    border-radius: 8px;
-    transition: all 0.2s ease;
-    cursor: pointer;
-    background: rgba(66, 133, 244, 0.05);
-    border: 2px solid rgba(66, 133, 244, 0.2);
-    box-shadow: 0 2px 4px rgba(66, 133, 244, 0.1);
-  `;
-  
-  step1.innerHTML = `
-    <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">1</span>
-    <div style="flex: 1;">
-      <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Sign up to Groq AI</div>
-      <div style="font-size: 12px; color: #666;">Create your free account • Click to open</div>
-    </div>
-    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">→</span>
-  `;
-
-  step1.onmouseover = () => {
-    step1.style.background = 'rgba(66, 133, 244, 0.1)';
-    step1.style.borderColor = '#4285F4';
-    step1.style.transform = 'translateY(-2px)';
-    step1.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.2)';
-  };
-  step1.onmouseout = () => {
-    step1.style.background = 'rgba(66, 133, 244, 0.05)';
-    step1.style.borderColor = 'rgba(66, 133, 244, 0.2)';
-    step1.style.transform = 'translateY(0)';
-    step1.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
-  };
-
-  // Create step 2 - Generate key (clickable)
-  const step2 = document.createElement('a');
-  step2.href = 'https://console.groq.com/keys';
-  step2.target = '_blank';
-  step2.style.cssText = `
-    display: flex;
-    align-items: start;
-    font-size: 14px;
-    color: #333;
-    direction: ltr;
-    text-decoration: none;
-    margin-bottom: 12px;
-    padding: 12px;
-    border-radius: 8px;
-    transition: all 0.2s ease;
-    cursor: pointer;
-    background: rgba(66, 133, 244, 0.05);
-    border: 2px solid rgba(66, 133, 244, 0.2);
-    box-shadow: 0 2px 4px rgba(66, 133, 244, 0.1);
-  `;
-  
-  step2.innerHTML = `
-    <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">2</span>
-    <div style="flex: 1;">
-      <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Generate your key</div>
-      <div style="font-size: 12px; color: #666;">Create your API key • Click to open</div>
-    </div>
-    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">→</span>
-  `;
-
-  step2.onmouseover = () => {
-    step2.style.background = 'rgba(66, 133, 244, 0.1)';
-    step2.style.borderColor = '#4285F4';
-    step2.style.transform = 'translateY(-2px)';
-    step2.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.2)';
-  };
-  step2.onmouseout = () => {
-    step2.style.background = 'rgba(66, 133, 244, 0.05)';
-    step2.style.borderColor = 'rgba(66, 133, 244, 0.2)';
-    step2.style.transform = 'translateY(0)';
-    step2.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
-  };
-
-  stepsContainer.appendChild(step1);
-  stepsContainer.appendChild(step2);
-  
-  const inputLabel = document.createElement('label');
-  inputLabel.textContent = 'Paste your key here:';
-  inputLabel.style.cssText = `
-    display: block;
-    font-size: 14px;
-    color: #333;
-    font-weight: 600;
-    margin-bottom: 8px;
-    direction: ltr;
-    text-align: left;
-  `;
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.value = currentKey;
-  input.placeholder = 'gsk...';
-  input.style.cssText = `
-    width: 100%;
-    padding: 12px;
-    margin-bottom: 8px;
-    border: 2px solid #e0e0e0;
-    border-radius: 8px;
-    box-sizing: border-box;
-    font-size: 14px;
-    transition: all 0.2s ease;
-    outline: none;
-    font-family: monospace;
-    direction: ltr;
-    text-align: left;
-  `;
-
-  const helpText = document.createElement('p');
-  helpText.textContent = 'Your key is safe and stored locally';
-  helpText.style.cssText = `
-    font-size: 12px;
-    color: #666;
-    margin-bottom: 20px;
-    text-align: center;
-    font-style: italic;
-  `;
-
-  input.onfocus = () => {
-    input.style.borderColor = '#4285F4';
-    input.style.boxShadow = '0 0 0 2px rgba(66, 133, 244, 0.1)';
-  };
-  input.onblur = () => {
-    input.style.borderColor = '#e0e0e0';
-    input.style.boxShadow = 'none';
-  };
-
-  const buttonContainer = document.createElement('div');
-  buttonContainer.style.cssText = `
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 12px;
-  `;
-
-  const submitButton = document.createElement('button');
-  submitButton.textContent = 'Save';
-  submitButton.style.cssText = `
-    background: #4285F4;
-    color: white;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  `;
-
-  submitButton.onmouseover = () => {
-    submitButton.style.background = '#1a73e8';
-    submitButton.style.transform = 'translateY(-1px)';
-  };
-  submitButton.onmouseout = () => {
-    submitButton.style.background = '#4285F4';
-    submitButton.style.transform = 'translateY(0)';
-  };
-
-  const cancelButton = document.createElement('button');
-  cancelButton.textContent = 'Cancel';
-  cancelButton.style.cssText = `
-    background: transparent;
-    color: #666;
-    border: none;
-    padding: 12px 24px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  `;
-
-  cancelButton.onmouseover = () => {
-    cancelButton.style.background = '#f5f5f5';
-    cancelButton.style.transform = 'translateY(-1px)';
-  };
-  cancelButton.onmouseout = () => {
-    cancelButton.style.background = 'transparent';
-    cancelButton.style.transform = 'translateY(0)';
-  };
-
-  buttonContainer.appendChild(submitButton);
-  buttonContainer.appendChild(cancelButton);
-  
-  promptBox.appendChild(title);
-  promptBox.appendChild(stepsContainer);
-  promptBox.appendChild(inputLabel);
-  promptBox.appendChild(input);
-  promptBox.appendChild(helpText);
-  promptBox.appendChild(buttonContainer);
-  overlay.appendChild(promptBox);
-
-  // Add the slideIn animation
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-  `;
-  document.head.appendChild(style);
-
-  submitButton.addEventListener('click', () => {
-    chrome.storage.sync.set({ apiKey: input.value }, () => {
-      overlay.remove();
-      style.remove();
-    });
-  });
-
-  cancelButton.addEventListener('click', () => {
-    overlay.remove();
-    style.remove();
-  });
-
-  return { overlay, input, submitButton, cancelButton };
 }
 
 function createNotificationPrompt(message) {
@@ -1246,33 +962,6 @@ function createNotificationPrompt(message) {
   return { overlay, cancelButton };
 }
 
-async function promptForApiKey(message, currentKey = '') {
-  return new Promise((resolve, reject) => {
-    const { overlay, input, submitButton, cancelButton } = createApiKeyPrompt(message, currentKey);
-    document.body.appendChild(overlay);
-
-    submitButton.onclick = async () => {
-      const apiKey = input.value.trim();
-      if (apiKey) {
-        await chrome.storage.sync.set({ apiKey });
-        summarizeHeadlines();
-        resolve(apiKey);
-      } else {
-        input.style.border = '1px solid red';
-      }
-    };
-
-    cancelButton.onclick = () => {
-      try {
-        document.body.removeChild(overlay);
-      } catch (error) {
-        // Ignore if already removed
-      }
-      resolve(null);
-    };
-  });
-}
-
 async function createNotification(message) {
   return new Promise((resolve, reject) => {
     const { overlay, cancelButton } = createNotificationPrompt(message);
@@ -1283,6 +972,195 @@ async function createNotification(message) {
       resolve(null);
     };
   });
+}
+
+// Show login prompt to user
+function showLoginPrompt() {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 10000;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    backdrop-filter: blur(4px);
+    direction: ltr;
+    animation: fadeIn 0.2s ease;
+  `;
+
+  const promptBox = document.createElement('div');
+  promptBox.style.cssText = `
+    background: white;
+    padding: 48px 40px 40px 40px;
+    border-radius: 12px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+    width: 90%;
+    max-width: 440px;
+    box-sizing: border-box;
+    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+    direction: ltr;
+    text-align: center;
+    position: relative;
+  `;
+
+  // Logo/Icon at the top
+  const iconContainer = document.createElement('div');
+  iconContainer.style.cssText = `
+    width: 48px;
+    height: 48px;
+    margin: 0 auto 20px auto;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  `;
+  const icon = document.createElement('img');
+  icon.src = chrome.runtime.getURL('icons/icon128.png');
+  icon.style.cssText = `
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  `;
+  iconContainer.appendChild(icon);
+
+  const title = document.createElement('h3');
+  title.textContent = 'Welcome to Just News';
+  title.style.cssText = `
+    text-align: center;
+    font-size: 24px;
+    color: #1a1a1a;
+    font-weight: 600;
+    margin: 0 0 12px 0;
+    line-height: 1.3;
+    letter-spacing: -0.3px;
+  `;
+
+  const message = document.createElement('p');
+  message.textContent = 'Sign in to start removing clickbait';
+  message.style.cssText = `
+    text-align: center;
+    font-size: 15px;
+    color: #666;
+    margin: 0 0 32px 0;
+    line-height: 1.5;
+    font-weight: 400;
+  `;
+
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+  `;
+
+  const loginButton = document.createElement('button');
+  loginButton.innerHTML = `
+    <svg style="width: 18px; height: 18px; margin-right: 12px; flex-shrink: 0;" viewBox="0 0 48 48">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      <path fill="none" d="M0 0h48v48H0z"/>
+    </svg>
+    <span>Continue with Google</span>
+  `;
+  loginButton.style.cssText = `
+    background: white;
+    color: #3c4043;
+    border: 1px solid #dadce0;
+    padding: 14px 24px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    font-family: inherit;
+  `;
+
+  loginButton.onmouseover = () => {
+    loginButton.style.background = '#f8f9fa';
+    loginButton.style.borderColor = '#d2d3d4';
+    loginButton.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
+  };
+  loginButton.onmouseout = () => {
+    loginButton.style.background = 'white';
+    loginButton.style.borderColor = '#dadce0';
+    loginButton.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+  };
+
+  const cancelButton = document.createElement('button');
+  cancelButton.textContent = 'Maybe later';
+  cancelButton.style.cssText = `
+    background: transparent;
+    color: #5f6368;
+    border: none;
+    padding: 14px 24px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  `;
+
+  cancelButton.onmouseover = () => {
+    cancelButton.style.background = '#f8f9fa';
+    cancelButton.style.color = '#3c4043';
+  };
+  cancelButton.onmouseout = () => {
+    cancelButton.style.background = 'transparent';
+    cancelButton.style.color = '#5f6368';
+  };
+
+  loginButton.addEventListener('click', async () => {
+    loginButton.disabled = true;
+    loginButton.textContent = 'Signing in...';
+    
+    try {
+      const response = await chrome.runtime.sendMessage({ action: 'login' });
+      if (response.success) {
+        overlay.remove();
+        isLoginPromptShown = false; // Reset flag on successful login
+        // Trigger headline summarization
+        summarizeHeadlines();
+      } else {
+        await createNotification('Login failed: ' + response.error);
+        overlay.remove();
+        isLoginPromptShown = false; // Reset flag on failure
+      }
+    } catch (error) {
+      await createNotification('Login error: ' + error.message);
+      overlay.remove();
+      isLoginPromptShown = false; // Reset flag on error
+    }
+  });
+
+  cancelButton.addEventListener('click', () => {
+    overlay.remove();
+    isLoginPromptShown = false; // Reset flag when user cancels
+  });
+
+  buttonContainer.appendChild(loginButton);
+  buttonContainer.appendChild(cancelButton);
+  promptBox.appendChild(iconContainer);
+  promptBox.appendChild(title);
+  promptBox.appendChild(message);
+  promptBox.appendChild(buttonContainer);
+  overlay.appendChild(promptBox);
+  document.body.appendChild(overlay);
 }
 
 

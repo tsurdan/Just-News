@@ -1,7 +1,193 @@
+// oauth_extension.js
+async function sha256(buffer) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(buffer));
+  return new Uint8Array(digest);
+}
+function base64url(bytes) {
+  let s = Array.from(bytes).map(b => String.fromCharCode(b)).join('');
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+async function generatePKCEPair() {
+  // generate a random code_verifier (43..128 chars recommended)
+  const arr = new Uint8Array(64);
+  crypto.getRandomValues(arr);
+  const code_verifier = Array.from(arr).map(b => ("0" + b.toString(16)).slice(-2)).join('');
+  const hashed = await sha256(code_verifier);
+  const code_challenge = base64url(hashed);
+  return { code_verifier, code_challenge };
+}
+
+async function loginWithGoogleAndExchange(workerUrl, clientId) {
+  const redirectUri = chrome.identity.getRedirectURL();
+  console.log('Redirect URI:', redirectUri); // Log to see what to register in Google Console
+  const { code_verifier, code_challenge } = await generatePKCEPair();
+  await chrome.storage.local.set({ code_verifier }); // store verifier locally briefly
+
+  const authUrl = "https://accounts.google.com/o/oauth2/v2/auth?" + new URLSearchParams({
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    response_type: "code",
+    scope: "openid email",
+    code_challenge: code_challenge,
+    code_challenge_method: "S256",
+    prompt: "consent",
+    access_type: "offline"
+  }).toString();
+
+  // launch OAuth popup
+  const redirectUrl = await new Promise((resolve, reject) => {
+    chrome.identity.launchWebAuthFlow({ url: authUrl, interactive: true }, (redir) => {
+      if (chrome.runtime.lastError) {
+        reject(chrome.runtime.lastError);
+      } else {
+        resolve(redir);
+      }
+    });
+  });
+
+  // parse code from redirectUrl
+  const u = new URL(redirectUrl);
+  const code = u.searchParams.get('code');
+  if (!code) throw new Error('No code returned');
+
+  // fetch verifier and send to worker to exchange
+  const { code_verifier: verifier } = await chrome.storage.local.get(['code_verifier']);
+  await chrome.storage.local.remove('code_verifier');
+
+  const resp = await fetch(`${workerUrl}/auth/exchange`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      code_verifier: verifier,
+      redirect_uri: redirectUri
+    })
+  });
+
+  if (!resp.ok) {
+    const t = await resp.text();
+    throw new Error('Exchange failed: ' + t);
+  }
+
+  const json = await resp.json();
+  // json = { jwt: "...", user: { sub, email, name } }
+  await chrome.storage.local.set({ access_jwt: json.jwt, user: json.user });
+  return json.user;
+}
+
+// Global refresh lock to prevent concurrent refresh attempts
+let refreshPromise = null;
+
+// Helper function to refresh token (with lock)
+async function refreshToken(workerUrl, access_jwt) {
+  // If a refresh is already in progress, wait for it
+  if (refreshPromise) {
+    console.log('Refresh already in progress, waiting...');
+    return refreshPromise;
+  }
+
+  // Start new refresh
+  refreshPromise = (async () => {
+    try {
+      const refreshed = await fetch(`${workerUrl}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + (access_jwt || '') },
+        body: '{}' // body not used
+      });
+      if (!refreshed.ok) {
+        // Refresh failed - clear auth and prompt user to login again
+        await chrome.storage.local.remove(['access_jwt', 'user']);
+        throw new Error('Session expired. Please sign in again.');
+      }
+      const rj = await refreshed.json();
+      await chrome.storage.local.set({ access_jwt: rj.jwt });
+      console.log('Token refreshed successfully');
+      return rj.jwt;
+    } catch (error) {
+      // Clear auth on any error
+      await chrome.storage.local.remove(['access_jwt', 'user']);
+      throw error;
+    } finally {
+      // Clear the lock after 2 seconds to allow future refreshes if needed
+      setTimeout(() => { refreshPromise = null; }, 2000);
+    }
+  })();
+
+  return refreshPromise;
+}
+
+// helper to call proxy with JWT
+async function callProxy(workerUrl, groqPayload) {
+  const { access_jwt } = await chrome.storage.local.get('access_jwt');
+  const res = await fetch(`${workerUrl}/proxy`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + (access_jwt || ''),
+      'X-JustNews-Key': ""
+    },
+    body: JSON.stringify(groqPayload)
+  });
+  if (!res.ok) {
+    if (res.status === 401) {
+      // token expired or invalid; call refresh with lock
+      try {
+        await refreshToken(workerUrl, access_jwt);
+        // retry original call with new token
+        const { access_jwt: newToken } = await chrome.storage.local.get('access_jwt');
+        const retryRes = await fetch(`${workerUrl}/proxy`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + (newToken || ''),
+            'X-JustNews-Key': ""
+          },
+          body: JSON.stringify(groqPayload)
+        });
+        if (!retryRes.ok) {
+          throw new Error(await retryRes.text());
+        }
+        return retryRes.json();
+      } catch (error) {
+        // If refresh failed, throw error with message to prompt login
+        throw new Error('Authentication failed. Please sign in again.');
+      }
+    } else if (res.status === 429) {
+      console.log(`Rate limited. Retry after: ${res.headers.get('retry-after')}`);
+      throw new Error(`Rate limit. Try again in ${(res.headers.get('retry-after') || 'a few') + ' seconds'}`);
+    } else {
+      throw new Error('Error fetching summary');
+    }
+  } else {
+    return res.json();
+
+  }
+}
+
+// Configuration
+const WORKER_URL = 'https://just-news-proxy.tzurda3.workers.dev';
+const CLIENT_ID = '621443676546-jn672ssj85ce7hi7ffih6lfq0e77elu4.apps.googleusercontent.com'; // Replace with the new Web Application client ID
+
+// Helper to check if user is authenticated
+async function isAuthenticated() {
+  const { access_jwt, user } = await chrome.storage.local.get(['access_jwt', 'user']);
+  return !!(access_jwt && user);
+}
+
 // limit for non-premium users
 const DAILY_LIMIT = 30;
 
-chrome.action.onClicked.addListener((tab) => {
+chrome.action.onClicked.addListener(async (tab) => {
+  // Check if user is authenticated
+  const authenticated = await isAuthenticated();
+
+  if (!authenticated) {
+    // Prompt user to login
+    chrome.tabs.sendMessage(tab.id, { action: 'promptLogin' });
+    return;
+  }
+
   // Show loading badge
   chrome.action.setBadgeText({ tabId: tab.id, text: '...' });
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
@@ -11,7 +197,36 @@ const dl = 5 * 6;
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'fetchContent') {
+  if (request.action === 'login') {
+    // Initiate Google OAuth login
+    loginWithGoogleAndExchange(WORKER_URL, CLIENT_ID)
+      .then(user => {
+        sendResponse({ success: true, user });
+      })
+      .catch(error => {
+        console.error('Login failed:', error);
+        sendResponse({ success: false, error: error.message });
+      });
+    return true; // Will respond asynchronously
+  } else if (request.action === 'checkAuth') {
+    // Check if user is authenticated
+    isAuthenticated().then(authenticated => {
+      if (authenticated) {
+        chrome.storage.local.get(['user'], (result) => {
+          sendResponse({ authenticated: true, user: result.user });
+        });
+      } else {
+        sendResponse({ authenticated: false });
+      }
+    });
+    return true; // Will respond asynchronously
+  } else if (request.action === 'logout') {
+    // Clear authentication
+    chrome.storage.local.remove(['access_jwt', 'user'], () => {
+      sendResponse({ success: true });
+    });
+    return true;
+  } else if (request.action === 'fetchContent') {
     fetch(request.url)
       .then(response => response.text())
       .then(html => {
@@ -62,106 +277,35 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     return true; // Will respond asynchronously
   } else if (request.action === 'AIcall') {
-    const apiKey = request.apiKey;
-    const model = request.model;
-    const apiProvider = request.apiProvider || "groq";
+    const model = request.model || 'meta-llama/llama-4-scout-17b-16e-instruct';
     const systemPrompt = request.systemPrompt && request.systemPrompt.trim().length > 0
       ? request.systemPrompt
-      : `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
-
-    // Set baseURL based on provider
-    let baseURL;
-    if (apiProvider === "groq") {
-      baseURL = "https://just-news-proxy.tzurda3.workers.dev";
-    } else if (apiProvider === "openai") {
-      baseURL = "https://api.openai.com/v1/chat/completions";
-    } else if (apiProvider === "claude") {
-      baseURL = "https://api.anthropic.com/v1/messages";
-    } else if (apiProvider === "gemini") {
-      // Gemini API key is in the URL as ?key=API_KEY
-      baseURL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
-    } else {
-      baseURL = "https://just-news-proxy.tzurda3.workers.dev";
-    }
+      : `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.`;
 
     let prompt = request.prompt;
     console.log(prompt);
 
-    let body, headers;
-    if (apiProvider === "claude") {
-      body = JSON.stringify({
-        model: model,
-        max_tokens: 300,
-        system: systemPrompt,
-        messages: [{ role: "user", content: prompt }]
-      });
-      headers = {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
-      };
-    } else if (apiProvider === "gemini") {
-      body = JSON.stringify({
-        contents: [
-          { role: "user", parts: [{ text: prompt }] }
-        ]
-      });
-      headers = {
-        "Content-Type": "application/json",
-        "x-goog-api-key": apiKey
-        // No Authorization header for Gemini, key is in URL
-      };
-    } else {
-      // OpenAI, Groq (OpenAI compatible)
-      body = JSON.stringify({
-        model: model,
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: prompt }
-        ],
-        temperature: 0.0,
-        max_tokens: 300,
-        top_p: 0.4,
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0
-      });
-      headers = {
-        "Content-Type": "application/json",
-        "X-JustNews-Key": ``
-      };
-    }
+    // Use authenticated proxy for Groq calls
+    const groqPayload = {
+      model: model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.0,
+      max_tokens: 300,
+      top_p: 0.4,
+      frequency_penalty: 0.0,
+      presence_penalty: 0.0
+    };
 
-    fetch(baseURL, {
-      method: "POST",
-      headers: headers,
-      body: body,
-    })
-      .then(response => {
-        if (!response.ok) {
-          if (response.status === 429) {
-            throw new Error(`Rate limit. Try again in ${(response.headers.get('retry-after') || 'a few') + ' seconds'}`);
-          }
-          if (response.status === 401) {
-            throw new Error('Invalid API key');
-          }
-          throw new Error('Error fetching summary');
-        } else {
-          return response.json();
-        }
-      })
+    callProxy(WORKER_URL, groqPayload)
       .then(data => {
-        let summary;
-        if (apiProvider === "claude") {
-          summary = data.content?.[0]?.text || data.completion || "";
-        } else if (apiProvider === "gemini") {
-          summary = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-        } else {
-          summary = data.choices?.[0]?.message?.content || "";
-        }
-        // Don't clean the JSON - let content script parse it
+        const summary = data.choices?.[0]?.message?.content || "";
         sendResponse({ summary: summary });
       })
       .catch(error => {
+        console.error('AI call error:', error);
         sendResponse({ error: error.message });
       });
     return true; // Will respond asynchronously
@@ -225,15 +369,15 @@ const REQUIRED_TOKEN = 'e23de-32dd3-d2fg3fw-f34f3w';
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   if (message.type === "activatePremium" && message.token == REQUIRED_TOKEN) {
-        chrome.storage.sync.set({ premium: true }, () => {
-          console.log('Premium unlocked via success page!');
-        });
+    chrome.storage.sync.set({ premium: true }, () => {
+      console.log('Premium unlocked via success page!');
+    });
 
-        setTimeout(() => {
-          chrome.runtime.openOptionsPage(() => {
-            console.log('Options page opened after premium unlock');
-          });
-        }, 10000);
+    setTimeout(() => {
+      chrome.runtime.openOptionsPage(() => {
+        console.log('Options page opened after premium unlock');
+      });
+    }, 10000);
     return true;
   }
 });
