@@ -130,6 +130,7 @@ async function callProxy(workerUrl, groqPayload) {
     body: JSON.stringify(groqPayload)
   });
   if (!res.ok) {
+    const msg = await res.text();
     if (res.status === 401) {
       // token expired or invalid; call refresh with lock
       try {
@@ -152,11 +153,9 @@ async function callProxy(workerUrl, groqPayload) {
           body: JSON.stringify(groqPayload)
         });
         if (!retryRes.ok) {
-          if (retryRes.status === 429 && (await retryRes.text()) === 'Daily quota exceeded') {
-            throw new Error('Daily quota exceeded. Please upgrade to premium for more usage.');
-          } else if (retryRes.status === 429) {
-            console.log(`Rate limited. Retry after: ${retryRes.headers.get('retry-after')}`);
-            throw new Error(`Rate limit. Try again in ${(retryRes.headers.get('retry-after') || 'a few') + ' seconds'}`);
+          if (retryRes.status === 429) {
+            console.log(`Rate limited on retry.`);
+            throw new Error(msg);
           } else {
             throw new Error('Error fetching summary');
           }
@@ -165,11 +164,9 @@ async function callProxy(workerUrl, groqPayload) {
       } catch (error) {
         throw new Error(`Error after token refresh: ${error.message}`);
       }
-    } else if (res.status === 429 && (await res.text()) === 'Daily quota exceeded') {
-      throw new Error('Daily quota exceeded');
     } else if (res.status === 429) {
-      console.log(`Rate limited. Retry after: ${res.headers.get('retry-after')}`);
-      throw new Error(`Rate limit. Try again in ${(res.headers.get('retry-after') || 'a few') + ' seconds'}`);
+      console.log(`Rate limited.`);
+      throw new Error(msg);
     } else {
       throw new Error('Error fetching summary');
     }

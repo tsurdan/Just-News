@@ -1,4 +1,3 @@
-// TODO: Move rate limiting logic to server side
 // TODO: Move premium handling to server side
 // TODO: move all model, summary and prompt to server side (and change temperature according to mode)
 // TODO: Add option to automatically replace headlines when entering news website
@@ -283,29 +282,43 @@ async function summarizeHeadlines() {
     let minRetryAfter = null;
     let hasRateLimit = false;
     let dailyQuotaExceeded = false;
+    let rateLimitMessage = '';
+    
     errors.forEach(e => {
       let msg = e.reason.message || '';
       if (msg.includes('Rate limit')) {
         hasRateLimit = true;
+        rateLimitMessage = msg; // Store the message
         const match = msg.match(/Try again in (\d+)/);
         if (match) {
           const retry = parseInt(match[1], 10);
           if (minRetryAfter === null || retry < minRetryAfter) minRetryAfter = retry;
         }
-      }
-      if (msg.includes('Daily quota exceeded')) {
+      } else if (msg.includes('Daily quota exceeded')) {
         hasRateLimit = true;
         dailyQuotaExceeded = true;
+      } else if (msg.includes('exceeded')) {
+        hasRateLimit = true;
+        rateLimitMessage = msg;
       }
     });
+    
     if (hasRateLimit) {
       if (dailyQuotaExceeded) {
         await createPremiumNotification('Daily limit exceeded. Please upgrade to premium for more usage.');
       } else {
-        let summary = minRetryAfter !== null
-          ? `Rate limit. Try again in ${minRetryAfter} seconds`
-          : 'Rate limit. Try again later';
-        await createNotification(summary);
+        // Format the retry message
+        let displayMessage = rateLimitMessage;
+        if (minRetryAfter !== null) {
+          const minutes = Math.floor(minRetryAfter / 60);
+          const seconds = minRetryAfter % 60;
+          if (minutes > 0) {
+            displayMessage = `Rate limit exceeded. Try again in ${minutes}m ${seconds}s`;
+          } else {
+            displayMessage = `Rate limit exceeded. Try again in ${seconds} seconds`;
+          }
+        }
+        await createNotification(displayMessage);
       }
     } else {
       let errorTypes = new Set();
@@ -828,6 +841,8 @@ Do not add any text before or after the JSON. Only return the JSON object.`;
         showLoginPrompt();
       }
       throw new Error('Session expired. Please sign in.');
+    } else if (errorMsg.includes('exceeded')) {
+      throw new Error(errorMsg);
     }
     throw new Error('Error fetching AI summary ' + errorMsg);
   }
