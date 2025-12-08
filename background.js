@@ -107,7 +107,7 @@ async function refreshToken(workerUrl, access_jwt) {
     } catch (error) {
       // Clear auth on any error
       await chrome.storage.local.remove(['access_jwt', 'user']);
-      throw error;
+      throw new Error(`Error refreshing token: ${error.message}`);
     } finally {
       // Clear the lock after 2 seconds to allow future refreshes if needed
       setTimeout(() => { refreshPromise = null; }, 2000);
@@ -125,7 +125,7 @@ async function callProxy(workerUrl, groqPayload) {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + (access_jwt || ''),
-      'X-JustNews-Key': ""
+      'X-JustNews-Key': "363bce11-3b8e-4e36-ae08-11d332dc8e23"
     },
     body: JSON.stringify(groqPayload)
   });
@@ -134,25 +134,39 @@ async function callProxy(workerUrl, groqPayload) {
       // token expired or invalid; call refresh with lock
       try {
         await refreshToken(workerUrl, access_jwt);
-        // retry original call with new token
+      } catch (error) {
+        // If refresh failed, throw error with message to prompt login
+        throw new Error(`Authentication failed. Please sign in again.`);
+      }
+
+      // retry original call with new token
+      try {
         const { access_jwt: newToken } = await chrome.storage.local.get('access_jwt');
         const retryRes = await fetch(`${workerUrl}/proxy`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + (newToken || ''),
-            'X-JustNews-Key': ""
+            'X-JustNews-Key': "363bce11-3b8e-4e36-ae08-11d332dc8e23"
           },
           body: JSON.stringify(groqPayload)
         });
         if (!retryRes.ok) {
-          throw new Error(await retryRes.text());
+          if (retryRes.status === 429 && (await retryRes.text()) === 'Daily quota exceeded') {
+            throw new Error('Daily quota exceeded. Please upgrade to premium for more usage.');
+          } else if (retryRes.status === 429) {
+            console.log(`Rate limited. Retry after: ${retryRes.headers.get('retry-after')}`);
+            throw new Error(`Rate limit. Try again in ${(retryRes.headers.get('retry-after') || 'a few') + ' seconds'}`);
+          } else {
+            throw new Error('Error fetching summary');
+          }
         }
         return retryRes.json();
       } catch (error) {
-        // If refresh failed, throw error with message to prompt login
-        throw new Error('Authentication failed. Please sign in again.');
+        throw new Error(`Error after token refresh: ${error.message}`);
       }
+    } else if (res.status === 429 && (await res.text()) === 'Daily quota exceeded') {
+      throw new Error('Daily quota exceeded');
     } else if (res.status === 429) {
       console.log(`Rate limited. Retry after: ${res.headers.get('retry-after')}`);
       throw new Error(`Rate limit. Try again in ${(res.headers.get('retry-after') || 'a few') + ' seconds'}`);
@@ -161,7 +175,6 @@ async function callProxy(workerUrl, groqPayload) {
     }
   } else {
     return res.json();
-
   }
 }
 
@@ -174,9 +187,6 @@ async function isAuthenticated() {
   const { access_jwt, user } = await chrome.storage.local.get(['access_jwt', 'user']);
   return !!(access_jwt && user);
 }
-
-// limit for non-premium users
-const DAILY_LIMIT = 30;
 
 chrome.action.onClicked.addListener(async (tab) => {
   // Check if user is authenticated
@@ -193,7 +203,6 @@ chrome.action.onClicked.addListener(async (tab) => {
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
-const dl = 5 * 6;
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -204,7 +213,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ success: true, user });
       })
       .catch(error => {
-        console.error('Login failed:', error);
+        console.log('Login failed:', error);
         sendResponse({ success: false, error: error.message });
       });
     return true; // Will respond asynchronously
@@ -305,7 +314,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ summary: summary });
       })
       .catch(error => {
-        console.error('AI call error:', error);
+        console.log('AI call error:', error);
         sendResponse({ error: error.message });
       });
     return true; // Will respond asynchronously
@@ -320,48 +329,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.action.setBadgeText({ tabId: sender.tab.id, text: '' });
     sendResponse({ status: 'badge cleared' });
     return;
-  } else if (request.action === 'checkDailyLimit') {
-    const today = new Date().toDateString();
-    chrome.storage.local.get(['dailyUsage'], (result) => {
-      try {
-        const dailyUsage = result.dailyUsage || {};
-
-        // Clean up old dates
-        Object.keys(dailyUsage).forEach(date => {
-          if (date !== today) delete dailyUsage[date];
-        });
-
-        const todayCount = dailyUsage[today] || 0;
-        sendResponse({
-          canProceed: todayCount < dl,
-          count: todayCount,
-          reason: todayCount >= dl ? 'dailyLimit' : null
-        });
-      } catch (error) {
-        sendResponse({ error: error.message });
-      }
-    });
-    return true;
-  }
-
-  if (request.action === 'incrementDailyCount') {
-    const today = new Date().toDateString();
-    chrome.storage.local.get(['dailyUsage'], (result) => {
-      try {
-        const dailyUsage = result.dailyUsage || {};
-        dailyUsage[today] = (dailyUsage[today] || 0) + 1;
-
-        chrome.storage.local.set({ dailyUsage }, () => {
-          sendResponse({
-            limitReached: dailyUsage[today] >= dl,
-            count: dailyUsage[today]
-          });
-        });
-      } catch (error) {
-        sendResponse({ error: error.message });
-      }
-    });
-    return true;
   }
 });
 

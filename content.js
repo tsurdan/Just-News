@@ -1,11 +1,10 @@
-// TODO: Optimize headline selection process
-// TODO: Improve error handling and user notifications
 // TODO: Move rate limiting logic to server side
 // TODO: Move premium handling to server side
-// TODO: Feature of headline selection by user
+// TODO: move all model, summary and prompt to server side (and change temperature according to mode)
 // TODO: Add option to automatically replace headlines when entering news website
 // TODO: Support in-article title replacement
-// TODO: Implement some caching mechanism
+// TODO: Implement some caching mechanism (inside extension)?
+// TODO: Add clean mode
 
 let premium = false; // Track premium status
 let isInitialized = false;
@@ -13,6 +12,7 @@ let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
 let ipu = false;
 let isLoginPromptShown = false; // Prevent duplicate login prompts
+let userSelectedElement = null; // Store user's selected headline element
 
 // Function to initialize premium status - only called once during startup
 async function initializePremiumStatus() {
@@ -44,6 +44,18 @@ async function initializeContentScript() {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'summarizeHeadlines') {
       counter = 0;
+      // Capture user's selected element before processing
+      const selection = window.getSelection();
+      if (selection && selection.rangeCount > 0) {
+        const range = selection.getRangeAt(0);
+        userSelectedElement = range.commonAncestorContainer;
+        // If it's a text node, get its parent element
+        if (userSelectedElement.nodeType === 3) {
+          userSelectedElement = userSelectedElement.parentElement;
+        }
+      } else {
+        userSelectedElement = null;
+      }
       summarizeHeadlines();
       sendResponse({status: 'Processing started'});
     } else if (request.action === 'premiumStatusChanged') {
@@ -125,17 +137,6 @@ async function summarizeHeadlines() {
     await createNotification('Error loading settings. Please try again.');
   }
   const apiOptions = {"model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
-  
-  // Check daily rate limit with background script
-  if (!ipb()) {
-    const limitCheck = await chrome.runtime.sendMessage({ action: 'checkDailyLimit' });
-    if (!limitCheck.canProceed) {
-      if (limitCheck.reason === 'dailyLimit') {
-        await createNotification('Daily limit reached. \n\nTo remove the limit, upgrade to premium!');
-      }
-      return;
-    }
-  }
 
   const limit = 20; // Maximum headlines per click
   let firstHeadlineChanged = false;
@@ -203,12 +204,34 @@ async function summarizeHeadlines() {
   // Filter out subject headlines
   headlines = headlines.filter(headline => headline.textContent.split(' ').length > 3);
 
-  // Sort headlines by font size in descending order
-  headlines.sort((a, b) => {
+  // Prioritize user-selected headline if exists
+  if (userSelectedElement) {
+    // Find if the selected element is in our headlines list, or find its closest headline ancestor
+    let selectedIndex = headlines.findIndex(h => h === userSelectedElement || h.contains(userSelectedElement));
+    
+    // If not found directly, check if selected element contains any headline
+    if (selectedIndex === -1) {
+      selectedIndex = headlines.findIndex(h => userSelectedElement.contains(h));
+    }
+    
+    if (selectedIndex > 0) {
+      // Move selected headline to the front
+      const selectedHeadline = headlines.splice(selectedIndex, 1)[0];
+      headlines.unshift(selectedHeadline);
+    }
+    // Clear selection after use
+    userSelectedElement = null;
+  }
+
+  // Sort headlines by font size in descending order (keep first item if it was user-selected)
+  const firstHeadline = headlines[0];
+  const restOfHeadlines = headlines.slice(1).sort((a, b) => {
     const fontSizeA = parseFloat(window.getComputedStyle(a).fontSize);
     const fontSizeB = parseFloat(window.getComputedStyle(b).fontSize);
     return fontSizeB - fontSizeA;
   });
+  
+  headlines = [firstHeadline, ...restOfHeadlines];
 
   // Process only the top <limit> headlines
   let rateLimitHit = false;
@@ -232,11 +255,6 @@ async function summarizeHeadlines() {
 
             typeHeadline(headline, `~${newHeadline}`);
             counter++;
-
-            // Update daily count with background script
-            if (!ipb()) {
-              chrome.runtime.sendMessage({ action: 'incrementDailyCount' }, (usage) => {});
-            }
 
             // Notify background to clear badge after first headline changes
             if (!firstHeadlineChanged) {
@@ -264,6 +282,7 @@ async function summarizeHeadlines() {
   if (succes.length === 0 && errors.length > 0) {
     let minRetryAfter = null;
     let hasRateLimit = false;
+    let dailyQuotaExceeded = false;
     errors.forEach(e => {
       let msg = e.reason.message || '';
       if (msg.includes('Rate limit')) {
@@ -274,12 +293,20 @@ async function summarizeHeadlines() {
           if (minRetryAfter === null || retry < minRetryAfter) minRetryAfter = retry;
         }
       }
+      if (msg.includes('Daily quota exceeded')) {
+        hasRateLimit = true;
+        dailyQuotaExceeded = true;
+      }
     });
     if (hasRateLimit) {
-      let summary = minRetryAfter !== null
-        ? `Rate limit. Try again in ${minRetryAfter} seconds`
-        : 'Rate limit. Try again later';
-      await createNotification(summary);
+      if (dailyQuotaExceeded) {
+        await createPremiumNotification('Daily limit exceeded. Please upgrade to premium for more usage.');
+      } else {
+        let summary = minRetryAfter !== null
+          ? `Rate limit. Try again in ${minRetryAfter} seconds`
+          : 'Rate limit. Try again later';
+        await createNotification(summary);
+      }
     } else {
       let errorTypes = new Set();
       errors.forEach(e => {
@@ -865,56 +892,6 @@ function createNotificationPrompt(message) {
     gap: 12px;
   `;
 
-  // Add upgrade button only for daily limit message
-  if (message === "Daily limit reached. \n\nTo remove the limit, upgrade to premium!") {
-    const upgradeButton = document.createElement('a');
-    upgradeButton.href = 'https://tsurdan.github.io/Just-News/premium.html';
-    upgradeButton.target = '_blank';
-    upgradeButton.style.cssText = `
-      position: relative;
-      padding: 2px;
-      border-radius: 30px;
-      background: linear-gradient(135deg, 
-        #8A2BE2 0%,
-        #58CC02 25%,
-        #6200EE 50%,
-        #58CC02 75%,
-        #8A2BE2 100%
-      );
-      background-size: 300% 300%;
-      animation: gradientShift 8s linear infinite;
-      text-decoration: none;
-      cursor: pointer;
-      direction: ltr;
-    `;
-
-    const upgradeSpan = document.createElement('span');
-    upgradeSpan.textContent = 'Upgrade to Premium';
-    upgradeSpan.style.cssText = `
-      display: block;
-      background: transparent;
-      color: white;
-      padding: 10px 20px;
-      border-radius: 28px;
-      font-size: 14px;
-      font-weight: 600;
-      transition: all 0.3s ease;
-      direction: ltr;
-      text-align: center;
-    `;
-
-    upgradeButton.appendChild(upgradeSpan);
-    upgradeButton.onmouseover = () => {
-      upgradeSpan.style.background = 'white';
-      upgradeSpan.style.color = '#6200EE';
-    };
-    upgradeButton.onmouseout = () => {
-      upgradeSpan.style.background = 'transparent';
-      upgradeSpan.style.color = 'white';
-    };
-    buttonContainer.appendChild(upgradeButton);
-  }
-
   const cancelButton = document.createElement('button');
   cancelButton.textContent = 'OK';
   cancelButton.style.cssText = `
@@ -1161,6 +1138,205 @@ function showLoginPrompt() {
   promptBox.appendChild(buttonContainer);
   overlay.appendChild(promptBox);
   document.body.appendChild(overlay);
+}
+
+// Show premium upgrade notification with styled "Maybe later" button
+function createPremiumNotification(message) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 10000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      backdrop-filter: blur(4px);
+      direction: ltr;
+      animation: fadeIn 0.2s ease;
+    `;
+
+    const notificationBox = document.createElement('div');
+    notificationBox.style.cssText = `
+      background: white;
+      padding: 48px 40px 40px 40px;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+      width: 90%;
+      max-width: 440px;
+      box-sizing: border-box;
+      animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      direction: ltr;
+      text-align: center;
+      position: relative;
+    `;
+
+    // Icon at the top
+    const iconContainer = document.createElement('div');
+    iconContainer.style.cssText = `
+      width: 48px;
+      height: 48px;
+      margin: 0 auto 20px auto;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    `;
+    const icon = document.createElement('img');
+    icon.src = chrome.runtime.getURL('icons/icon128.png');
+    icon.style.cssText = `
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+    `;
+    iconContainer.appendChild(icon);
+
+    const title = document.createElement('h3');
+    title.textContent = 'Daily Limit Reached';
+    title.style.cssText = `
+      text-align: center;
+      font-size: 24px;
+      color: #1a1a1a;
+      font-weight: 600;
+      margin: 0 0 12px 0;
+      line-height: 1.3;
+      letter-spacing: -0.3px;
+    `;
+
+    const messageText = document.createElement('p');
+    messageText.textContent = message;
+    messageText.style.cssText = `
+      text-align: center;
+      font-size: 15px;
+      color: #666;
+      margin: 0 0 32px 0;
+      line-height: 1.5;
+      font-weight: 400;
+    `;
+
+    const buttonContainer = document.createElement('div');
+    buttonContainer.style.cssText = `
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+    `;
+
+    // Upgrade to Premium button with gradient animation
+    const upgradeButton = document.createElement('a');
+    upgradeButton.href = 'https://tsurdan.github.io/Just-News/premium.html';
+    upgradeButton.target = '_blank';
+    upgradeButton.style.cssText = `
+      position: relative;
+      padding: 2px;
+      border-radius: 30px;
+      background: linear-gradient(135deg, 
+        #8A2BE2 0%,
+        #58CC02 25%,
+        #6200EE 50%,
+        #58CC02 75%,
+        #8A2BE2 100%
+      );
+      background-size: 300% 300%;
+      animation: gradientShift 8s linear infinite;
+      text-decoration: none;
+      cursor: pointer;
+      direction: ltr;
+      width: 100%;
+      box-sizing: border-box;
+    `;
+
+    const upgradeSpan = document.createElement('span');
+    upgradeSpan.textContent = 'Upgrade to Premium';
+    upgradeSpan.style.cssText = `
+      display: block;
+      background: transparent;
+      color: white;
+      padding: 14px 24px;
+      border-radius: 28px;
+      font-size: 15px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      direction: ltr;
+      text-align: center;
+    `;
+
+    upgradeButton.appendChild(upgradeSpan);
+    upgradeButton.onmouseover = () => {
+      upgradeSpan.style.background = 'white';
+      upgradeSpan.style.color = '#6200EE';
+    };
+    upgradeButton.onmouseout = () => {
+      upgradeSpan.style.background = 'transparent';
+      upgradeSpan.style.color = 'white';
+    };
+
+    // Add gradient animation style if not already added
+    if (!document.getElementById('premium-gradient-animation')) {
+      const style = document.createElement('style');
+      style.id = 'premium-gradient-animation';
+      style.textContent = `
+        @keyframes gradientShift {
+          0% { background-position: 0% 50% }
+          50% { background-position: 100% 50% }
+          100% { background-position: 0% 50% }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(20px); opacity: 0; }
+          to { transform: translateY(0); opacity: 1; }
+        }
+      `;
+      document.head.appendChild(style);
+    }
+
+    const maybeLaterButton = document.createElement('button');
+    maybeLaterButton.textContent = 'Maybe later';
+    maybeLaterButton.style.cssText = `
+      background: transparent;
+      color: #5f6368;
+      border: none;
+      padding: 14px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    `;
+
+    maybeLaterButton.onmouseover = () => {
+      maybeLaterButton.style.background = '#f8f9fa';
+      maybeLaterButton.style.color = '#3c4043';
+    };
+    maybeLaterButton.onmouseout = () => {
+      maybeLaterButton.style.background = 'transparent';
+      maybeLaterButton.style.color = '#5f6368';
+    };
+
+    maybeLaterButton.addEventListener('click', () => {
+      overlay.remove();
+      resolve();
+    });
+
+    buttonContainer.appendChild(upgradeButton);
+    buttonContainer.appendChild(maybeLaterButton);
+    notificationBox.appendChild(iconContainer);
+    notificationBox.appendChild(title);
+    notificationBox.appendChild(messageText);
+    notificationBox.appendChild(buttonContainer);
+    overlay.appendChild(notificationBox);
+    document.body.appendChild(overlay);
+  });
 }
 
 
