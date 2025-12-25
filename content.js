@@ -1034,16 +1034,109 @@ function showLoginPrompt() {
     letter-spacing: -0.3px;
   `;
 
-  const message = document.createElement('p');
-  message.textContent = 'Sign in to start removing clickbait';
-  message.style.cssText = `
-    text-align: center;
-    font-size: 15px;
-    color: #666;
-    margin: 0 0 32px 0;
-    line-height: 1.5;
-    font-weight: 400;
+  // Removed the 'Sign in to start removing clickbait' message for a cleaner UI
+
+
+  // --- Mode Selector (Robot/Clean) ---
+  const modeSelectorContainer = document.createElement('div');
+  modeSelectorContainer.className = 'jn-mode-selector';
+  modeSelectorContainer.style.cssText = `
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 14px;
+    margin-top: 0;
+    transform: scale(1);
+    opacity: 1;
+    filter: none;
+    transition: all 0.2s;
   `;
+
+  // Inject CSS for .jn-mode-btn and .jn-mode-btn.selected
+  if (!document.getElementById('jn-mode-btn-style')) {
+    const style = document.createElement('style');
+    style.id = 'jn-mode-btn-style';
+    style.textContent = `
+      .jn-mode-btn {
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        background: white; border: 2px solid transparent; border-radius: 14px; padding: 18px 18px 14px 18px; min-width: 110px; min-height: 110px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 12px rgba(66,133,244,0.10);
+        margin: 0 6px;
+      }
+      .jn-mode-btn.selected {
+        background: #4285F4 !important; color: white !important; box-shadow: 0 6px 24px rgba(66,133,244,0.25) !important; border-color: #4285F4 !important;
+      }
+      .jn-mode-btn.selected img { filter: brightness(0) invert(1) !important; }
+      .jn-mode-btn.selected span { color: white !important; }
+      .jn-mode-btn img { width:48px; height:48px; margin-bottom:12px; }
+      .jn-mode-btn span { font-weight:700; font-size:1.18em; color:#333; margin-bottom: 4px; }
+      .jn-mode-btn .jn-desc { font-size:1em; opacity:0.85; color:#333; font-weight:400; margin-bottom:0; text-align:center; }
+      .jn-mode-selector { gap: 16px !important; }
+      @media (max-width: 600px) {
+        .jn-mode-btn { min-width: 80px; min-height: 80px; padding: 10px 6px 8px 6px; }
+        .jn-mode-btn img { width:32px; height:32px; margin-bottom:6px; }
+        .jn-mode-btn span { font-size:1em; }
+        .jn-mode-btn .jn-desc { font-size:0.85em; }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  // Mode configs (same as options.js)
+  const characterConfigs = {
+    robot: {
+      systemPrompt: "Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.",
+      userPrompt: "Rewrite the headline, based on the article, with these rules:\n\n- Robotic, factual, no clickbait\n- Summarize the key point of the article\n- Be objective and informative\n Keep the original headline length and language"
+    },
+    clean: {
+      systemPrompt: "You are a guardian of ethical and family-friendly speech according to Jewish laws of Lashon Hara (evil speech). You rewrite headlines to remove gossip, slander, negativity about individuals, harmful speech, profanity, swear words, violence, sexual content, and any content inappropriate for all ages. Focus on constructive, respectful, and clean language that avoids speaking negatively about people. Even don't wrtite any name of person, just generalize it. Still make the headline informative and summerizing the main point of the article, while adhering to these ethical guidelines.",
+      userPrompt: "Rewrite this headline according to Jewish laws against Lashon Hara (evil speech) and remove all inappropriate content. Remove:\n- Gossip, slander, or negative speech about individuals\n- Profanity and swear words\n- Violent or graphic descriptions\n- Sexual content or references\n- Any content not suitable for all ages\n\nFocus only on essential facts presented respectfully and appropriately. If the article contains only inappropriate content with no constructive value, note that it violates speech ethics.\n\nYour answer must be in the original headline length and in the article language."
+    }
+  };
+  let currentMode = 'robot';
+
+  // Mode button factory
+  function createModeButton(mode, iconUrl, label, desc) {
+    const btn = document.createElement('div');
+    btn.className = 'jn-mode-btn' + (mode === currentMode ? ' selected' : '');
+
+    // Create image element and set src using chrome.runtime.getURL
+    const img = document.createElement('img');
+    img.src = iconUrl;
+    img.alt = label;
+
+    // Create label and description
+    const nameSpan = document.createElement('span');
+    nameSpan.textContent = label;
+    const descSpan = document.createElement('span');
+    descSpan.textContent = desc;
+    descSpan.className = 'jn-desc';
+
+    // Append children
+    btn.appendChild(img);
+    btn.appendChild(nameSpan);
+    btn.appendChild(descSpan);
+
+    btn.onclick = () => {
+      if (currentMode === mode) return;
+      currentMode = mode;
+      // Update UI selection
+      Array.from(modeSelectorContainer.children).forEach(child => child.classList.remove('selected'));
+      btn.classList.add('selected');
+      // Save prompts to storage
+      chrome.storage.sync.set({
+        characterMode: mode,
+        systemPrompt: characterConfigs[mode].systemPrompt,
+        customPrompt: characterConfigs[mode].userPrompt
+      });
+    };
+    return btn;
+  }
+
+  // Add Robot and Clean mode buttons
+  modeSelectorContainer.appendChild(createModeButton('robot', chrome.runtime.getURL('icons2/robot.png'), 'Robot', 'Factual & objective'));
+  modeSelectorContainer.appendChild(createModeButton('clean', chrome.runtime.getURL('icons2/clean.png'), 'Clean', 'Family-friendly'));
+  // --- End Mode Selector ---
 
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = `
@@ -1055,14 +1148,16 @@ function showLoginPrompt() {
 
   const loginButton = document.createElement('button');
   loginButton.innerHTML = `
-    <svg style="width: 18px; height: 18px; margin-right: 12px; flex-shrink: 0;" viewBox="0 0 48 48">
-      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-      <path fill="none" d="M0 0h48v48H0z"/>
-    </svg>
-    <span>Continue with Google</span>
+    <span style="display:flex;align-items:center;gap:7px;justify-content:center;">
+      <svg style="width: 20px; height: 20px; flex-shrink: 0;" viewBox="0 0 48 48">
+        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+        <path fill="none" d="M0 0h48v48H0z"/>
+      </svg>
+      <span style="font-size:1em;">Continue with Google</span>
+    </span>
   `;
   loginButton.style.cssText = `
     background: white;
@@ -1093,64 +1188,101 @@ function showLoginPrompt() {
     loginButton.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
   };
 
-  const cancelButton = document.createElement('button');
-  cancelButton.textContent = 'Maybe later';
-  cancelButton.style.cssText = `
+  // Add X close button in the top right corner
+  const closeButton = document.createElement('button');
+  closeButton.innerHTML = '&times;';
+  closeButton.setAttribute('aria-label', 'Close');
+  closeButton.style.cssText = `
+    position: absolute;
+    top: 12px;
+    right: 12px;
     background: transparent;
-    color: #5f6368;
     border: none;
-    padding: 14px 24px;
-    border-radius: 8px;
-    font-size: 14px;
-    font-weight: 500;
+    color: #888;
+    font-size: 2.1rem;
+    font-weight: 700;
     cursor: pointer;
-    transition: all 0.15s ease;
-    font-family: inherit;
+    z-index: 10;
+    line-height: 1;
+    padding: 0 6px;
+    transition: color 0.2s;
   `;
-
-  cancelButton.onmouseover = () => {
-    cancelButton.style.background = '#f8f9fa';
-    cancelButton.style.color = '#3c4043';
-  };
-  cancelButton.onmouseout = () => {
-    cancelButton.style.background = 'transparent';
-    cancelButton.style.color = '#5f6368';
+  closeButton.onmouseover = () => { closeButton.style.color = '#4285F4'; };
+  closeButton.onmouseout = () => { closeButton.style.color = '#888'; };
+  closeButton.onclick = () => {
+    overlay.remove();
+    isLoginPromptShown = false;
   };
 
   loginButton.addEventListener('click', async () => {
     loginButton.disabled = true;
     loginButton.textContent = 'Signing in...';
-    
-    try {
-      const response = await chrome.runtime.sendMessage({ action: 'login' });
-      if (response.success) {
+    // Save current mode prompts before login
+    chrome.storage.sync.set({
+      characterMode: currentMode,
+      systemPrompt: characterConfigs[currentMode].systemPrompt,
+      customPrompt: characterConfigs[currentMode].userPrompt
+    }, async () => {
+      try {
+        const response = await chrome.runtime.sendMessage({ action: 'login' });
+        if (response.success) {
+          overlay.remove();
+          isLoginPromptShown = false; // Reset flag on successful login
+          // Trigger headline summarization
+          summarizeHeadlines();
+        } else {
+          await createNotification('Login failed: ' + response.error);
+          overlay.remove();
+          isLoginPromptShown = false; // Reset flag on failure
+        }
+      } catch (error) {
+        await createNotification('Login error: ' + error.message);
         overlay.remove();
-        isLoginPromptShown = false; // Reset flag on successful login
-        // Trigger headline summarization
-        summarizeHeadlines();
-      } else {
-        await createNotification('Login failed: ' + response.error);
-        overlay.remove();
-        isLoginPromptShown = false; // Reset flag on failure
+        isLoginPromptShown = false; // Reset flag on error
       }
-    } catch (error) {
-      await createNotification('Login error: ' + error.message);
-      overlay.remove();
-      isLoginPromptShown = false; // Reset flag on error
-    }
-  });
-
-  cancelButton.addEventListener('click', () => {
-    overlay.remove();
-    isLoginPromptShown = false; // Reset flag when user cancels
+    });
   });
 
   buttonContainer.appendChild(loginButton);
-  buttonContainer.appendChild(cancelButton);
+  // Insert close button in the corner
+  promptBox.appendChild(closeButton);
   promptBox.appendChild(iconContainer);
   promptBox.appendChild(title);
-  promptBox.appendChild(message);
-  promptBox.appendChild(buttonContainer);
+  // Removed message for a cleaner UI
+
+  // Removed the stepper (1>2 icon) for a cleaner UI
+
+  // Highlight mode selection area (now smaller and less prominent)
+  const modeSection = document.createElement('div');
+  modeSection.style.cssText = 'background:#f6faff;border-radius:10px;padding:8px 2px 4px 2px;margin-bottom:10px;box-shadow:0 1px 4px rgba(66,133,244,0.03);';
+  const modeLabel = document.createElement('div');
+  modeLabel.textContent = 'Choose your mode:';
+  modeLabel.style.cssText = 'text-align:center;font-size:0.98em;color:#4285F4;font-weight:500;margin-bottom:4px;opacity:0.7;';
+  modeSection.appendChild(modeLabel);
+  modeSection.appendChild(modeSelectorContainer);
+  promptBox.appendChild(modeSection);
+
+  // Step 2: Sign in (now more prominent)
+  const signInSection = document.createElement('div');
+  signInSection.style.cssText = 'text-align:center;margin-bottom:0;margin-top:0;';
+  const signInLabel = document.createElement('div');
+  signInLabel.textContent = 'Sign in with Google';
+  signInLabel.style.cssText = 'font-size:1.22em;color:#1a1a1a;font-weight:800;margin-bottom:16px;letter-spacing:-0.5px;text-shadow:0 2px 8px rgba(66,133,244,0.08);';
+  signInSection.appendChild(signInLabel);
+  // Make login button larger and bolder
+  loginButton.style.padding = '20px 32px';
+  loginButton.style.fontSize = '1.18em';
+  loginButton.style.fontWeight = '700';
+  loginButton.style.borderRadius = '12px';
+  loginButton.style.boxShadow = '0 4px 16px rgba(66,133,244,0.10)';
+  loginButton.style.margin = '0 auto 0 auto';
+  loginButton.style.maxWidth = '340px';
+  loginButton.style.display = 'flex';
+  loginButton.style.alignItems = 'center';
+  loginButton.style.justifyContent = 'center';
+  loginButton.style.gap = '12px';
+  signInSection.appendChild(buttonContainer);
+  promptBox.appendChild(signInSection);
   overlay.appendChild(promptBox);
   document.body.appendChild(overlay);
 }

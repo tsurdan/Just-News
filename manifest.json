@@ -43,6 +43,7 @@
         "https://*.haaretz.co.il/*",
         "https://*.calcalist.co.il/*",
         "https://*.globes.co.il/*",
+        "https://*.maariv.co.il/*",
         "https://*.themarker.com/*",
         "https://*.bizportal.co.il/*",
         "https://*.bloomberg.co.il/*",
@@ -148,7 +149,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["icons/icon128.png"],
+      "resources": ["icons/icon128.png", "icons2/robot.png", "icons2/clean.png"],
       "matches": ["<all_urls>"]
     }
   ],
