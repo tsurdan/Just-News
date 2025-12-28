@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const preferedLang = document.getElementById('preferedLang');
   const customPromptsSection = document.getElementById('customPromptsSection');
   const premiumContainer = document.getElementById('premiumContainer');
-  
+
   const systemPromptCounter = document.getElementById('systemPromptCounter');
   const customPromptCounter = document.getElementById('customPromptCounter');
 
@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateCharCounter(textarea, counter, maxLength) {
     const currentLength = textarea.value.length;
     counter.textContent = `${currentLength}/${maxLength}`;
-    
+
     counter.classList.remove('warning', 'danger');
     if (currentLength > maxLength * 0.9) {
       counter.classList.add('danger');
@@ -68,24 +68,35 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  chrome.storage.sync.get(['characterMode', 'systemPrompt', 'customPrompt', 'modifiedPrompts', 'premium', 'preferedLang'], (data) => {
-    isPremium = !!data.premium;
-    updatePremiumUI(isPremium);
+  chrome.storage.sync.get(['characterMode', 'systemPrompt', 'customPrompt', 'modifiedPrompts', 'preferedLang'], (data) => {
+    chrome.storage.local.get(['access_jwt'], (localData) => {
+      let premium = false;
+      if (localData.access_jwt) {
+        try {
+          const payload = localData.access_jwt.split('.')[1];
+          const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+          premium = !!decoded.premium;
+        } catch (e) {
+          premium = false;
+        }
+      }
+      isPremium = premium;
+      updatePremiumUI(isPremium);
+      if (data.preferedLang) {
+        preferedLang.value = data.preferedLang;
+      } else {
+        preferedLang.value = 'english';
+      }
 
-    if (data.preferedLang) {
-      preferedLang.value = data.preferedLang;
-    } else {
-      preferedLang.value = 'english';
-    }
+      currentCharacterMode = data.characterMode || 'robot';
 
-    currentCharacterMode = data.characterMode || 'robot';
-    
-    if (data.modifiedPrompts) {
-      modifiedPrompts = data.modifiedPrompts;
-    }
-    
-    updateCharacterModeUI();
-    loadPromptsForMode(currentCharacterMode);
+      if (data.modifiedPrompts) {
+        modifiedPrompts = data.modifiedPrompts;
+      }
+
+      updateCharacterModeUI();
+      loadPromptsForMode(currentCharacterMode);
+    })
   });
 
   function updatePremiumUI(premium) {
@@ -114,10 +125,10 @@ document.addEventListener('DOMContentLoaded', () => {
   characterModes.forEach(mode => {
     mode.addEventListener('click', (e) => {
       e.stopPropagation();
-      
+
       const clickedMode = mode.dataset.mode;
       const isPremiumMode = !['robot', 'clean'].includes(clickedMode);
-      
+
       if (!isPremium && isPremiumMode) {
         window.open("https://tsurdan.github.io/Just-News/premium.html");
         return;
@@ -126,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (isPremium) {
         saveCurrentPrompts();
       }
-      
+
       currentCharacterMode = clickedMode;
       updateCharacterModeUI();
       loadPromptsForMode(currentCharacterMode);
@@ -135,12 +146,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function saveCurrentPrompts() {
     if (!isPremium) return;
-    
+
     modifiedPrompts[currentCharacterMode] = {
       systemPrompt: systemPrompt ? systemPrompt.value : '',
       userPrompt: customPrompt ? customPrompt.value : ''
     };
-    
+
     chrome.storage.sync.set({ modifiedPrompts: modifiedPrompts });
   }
 
@@ -154,7 +165,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       return;
     }
-    
+
     if (modifiedPrompts[mode]) {
       if (systemPrompt) systemPrompt.value = modifiedPrompts[mode].systemPrompt;
       if (customPrompt) customPrompt.value = modifiedPrompts[mode].userPrompt;
@@ -163,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (systemPrompt) systemPrompt.value = config.systemPrompt;
       if (customPrompt) customPrompt.value = config.userPrompt;
     }
-    
+
     if (systemPrompt && systemPromptCounter) {
       updateCharCounter(systemPrompt, systemPromptCounter, 1000);
     }
@@ -176,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
     characterModes.forEach(mode => {
       const modeType = mode.dataset.mode;
       const isSelected = modeType === currentCharacterMode;
-      
+
       if (isSelected) {
         mode.classList.add('selected');
       } else {
@@ -190,14 +201,14 @@ document.addEventListener('DOMContentLoaded', () => {
       characterMode: currentCharacterMode,
       preferedLang: preferedLang.value
     };
-    
+
     if (isPremium) {
       saveCurrentPrompts();
-      
+
       if (currentCharacterMode === 'custom') {
         const systemPromptValue = systemPrompt ? systemPrompt.value.trim() : '';
         const customPromptValue = customPrompt ? customPrompt.value.trim() : '';
-        
+
         if (systemPromptValue === '' || customPromptValue === '') {
           status.textContent = 'Custom mode requires both prompts!';
           status.style.color = '#dc3545';
@@ -208,7 +219,7 @@ document.addEventListener('DOMContentLoaded', () => {
           return;
         }
       }
-      
+
       dataToSave.systemPrompt = systemPrompt ? systemPrompt.value : '';
       dataToSave.customPrompt = customPrompt ? customPrompt.value : '';
       dataToSave.modifiedPrompts = modifiedPrompts;
@@ -218,7 +229,7 @@ document.addEventListener('DOMContentLoaded', () => {
       dataToSave.systemPrompt = config.systemPrompt;
       dataToSave.customPrompt = config.userPrompt;
     }
-    
+
     chrome.storage.sync.set(dataToSave, () => {
       status.textContent = 'Saved!';
       status.style.color = '#4285F4';
@@ -241,32 +252,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   resetBtn.onclick = () => {
     if (confirm('Are you sure you want to reset all settings? This will clear all custom prompts and preferences.')) {
-      chrome.storage.sync.get(['premium'], (data) => {
-        const currentPremium = data.premium;
-        
-        chrome.storage.sync.clear(() => {
-          if (currentPremium) {
-            chrome.storage.sync.set({ premium: currentPremium });
-          }
-          
-          currentCharacterMode = 'robot';
-          updateCharacterModeUI();
-          
-          if (isPremium && systemPrompt && customPrompt) {
-            systemPrompt.value = characterConfigs.robot.systemPrompt;
-            customPrompt.value = characterConfigs.robot.userPrompt;
-            modifiedPrompts = {};
-            updateCharCounter(systemPrompt, systemPromptCounter, 1000);
-            updateCharCounter(customPrompt, customPromptCounter, 800);
-          }
-          
-          preferedLang.value = 'english';
-          
-          status.textContent = 'Settings Reset!';
-          status.style.color = '#4285F4';
-          setTimeout(() => status.textContent = '', 2000);
-        });
-      });
+      currentCharacterMode = 'robot';
+      updateCharacterModeUI();
+
+      if (isPremium && systemPrompt && customPrompt) {
+        systemPrompt.value = characterConfigs.robot.systemPrompt;
+        customPrompt.value = characterConfigs.robot.userPrompt;
+        modifiedPrompts = {};
+        updateCharCounter(systemPrompt, systemPromptCounter, 1000);
+        updateCharCounter(customPrompt, customPromptCounter, 800);
+      }
+
+      preferedLang.value = 'english';
+
+      status.textContent = 'Settings Reset!';
+      status.style.color = '#4285F4';
+      setTimeout(() => status.textContent = '', 2000);
     }
   };
 });
