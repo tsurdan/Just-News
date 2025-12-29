@@ -1,11 +1,11 @@
 // TODO: Move premium handling to server side
 // TODO: move all model, summary and prompt to server side (and change temperature according to mode)
-// TODO: Add option to automatically replace headlines when entering news website
 // TODO: Support in-article title replacement
 // TODO: Implement some caching mechanism (inside extension)?
 // TODO: Add clean mode
 
 let premium = false; // Track premium status
+let autoReplaceHeadlines = true; // Default: enabled
 let isInitialized = false;
 let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
@@ -32,10 +32,24 @@ function ipb() {
 
 async function initializeContentScript() {
   if (isInitialized) return;
-  
+
+  // Load autoReplaceHeadlines setting from storage (default true)
+  chrome.storage.sync.get(['autoReplaceHeadlines'], (data) => {
+    if (typeof data.autoReplaceHeadlines === 'boolean') {
+      autoReplaceHeadlines = data.autoReplaceHeadlines;
+    } else {
+      autoReplaceHeadlines = true;
+    }
+
+    // If enabled, run headline replacement automatically
+    if (autoReplaceHeadlines) {
+      summarizeHeadlines();
+    }
+  });
+
   // Initialize premium status
   await initializePremiumStatus();
-  
+
   // Add tooltip styles to the page
   addTooltipStyles();
 
@@ -331,6 +345,7 @@ async function summarizeHeadlines() {
         }
       });
       let summary = Array.from(errorTypes).join(', ');
+      if (!summary.includes('Session expired. Please sign in'))
       await createNotification(summary);
     }
   }
@@ -1138,6 +1153,29 @@ function showLoginPrompt() {
   modeSelectorContainer.appendChild(createModeButton('clean', chrome.runtime.getURL('icons2/clean.png'), 'Clean', 'Family-friendly'));
   // --- End Mode Selector ---
 
+
+  // --- Auto Replace Headlines Checkbox ---
+  const autoReplaceContainer = document.createElement('div');
+  autoReplaceContainer.style.cssText = 'display:flex;align-items:center;justify-content:center;margin-bottom:10px;gap:8px;';
+  const autoReplaceCheckbox = document.createElement('input');
+  autoReplaceCheckbox.type = 'checkbox';
+  autoReplaceCheckbox.id = 'jn-auto-replace-checkbox';
+  autoReplaceCheckbox.checked = true;
+  autoReplaceCheckbox.style.cssText = 'margin-right:6px;transform:scale(1.2);accent-color:#4285F4;';
+  const autoReplaceLabel = document.createElement('label');
+  autoReplaceLabel.htmlFor = 'jn-auto-replace-checkbox';
+  autoReplaceLabel.textContent = 'Automatically replace headlines on page load';
+  autoReplaceLabel.style.cssText = 'font-size:1em;color:#4285F4;font-weight:500;cursor:pointer;user-select:none;';
+  autoReplaceContainer.appendChild(autoReplaceCheckbox);
+  autoReplaceContainer.appendChild(autoReplaceLabel);
+
+  // Try to load previous value from storage
+  chrome.storage.sync.get(['autoReplaceHeadlines'], (data) => {
+    if (typeof data.autoReplaceHeadlines === 'boolean') {
+      autoReplaceCheckbox.checked = data.autoReplaceHeadlines;
+    }
+  });
+
   const buttonContainer = document.createElement('div');
   buttonContainer.style.cssText = `
     display: flex;
@@ -1217,11 +1255,12 @@ function showLoginPrompt() {
   loginButton.addEventListener('click', async () => {
     loginButton.disabled = true;
     loginButton.textContent = 'Signing in...';
-    // Save current mode prompts before login
+    // Save current mode prompts and autoReplaceHeadlines before login
     chrome.storage.sync.set({
       characterMode: currentMode,
       systemPrompt: characterConfigs[currentMode].systemPrompt,
-      customPrompt: characterConfigs[currentMode].userPrompt
+      customPrompt: characterConfigs[currentMode].userPrompt,
+      autoReplaceHeadlines: autoReplaceCheckbox.checked
     }, async () => {
       try {
         const response = await chrome.runtime.sendMessage({ action: 'login' });
@@ -1243,6 +1282,8 @@ function showLoginPrompt() {
     });
   });
 
+  // Insert auto replace checkbox above login button
+  buttonContainer.appendChild(autoReplaceContainer);
   buttonContainer.appendChild(loginButton);
   // Insert close button in the corner
   promptBox.appendChild(closeButton);

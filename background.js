@@ -179,6 +179,27 @@ async function callProxy(workerUrl, groqPayload) {
 const WORKER_URL = 'https://just-news-proxy.tzurda3.workers.dev';
 const CLIENT_ID = '621443676546-jn672ssj85ce7hi7ffih6lfq0e77elu4.apps.googleusercontent.com'; // Replace with the new Web Application client ID
 
+// Add context menu for toggling auto headline replacement
+chrome.runtime.onInstalled.addListener(() => {
+  chrome.contextMenus.create({
+    id: 'toggleAutoReplace',
+    title: 'Turn Off/On Auto Headline Replacement',
+    contexts: ['action'] // Only show when right-clicking the extension icon
+  });
+});
+
+chrome.contextMenus.onClicked.addListener((info, tab) => {
+  if (info.menuItemId === 'toggleAutoReplace') {
+    chrome.storage.sync.get(['autoReplaceHeadlines'], (data) => {
+      const current = (typeof data.autoReplaceHeadlines === 'boolean') ? data.autoReplaceHeadlines : true;
+      const newValue = !current;
+      chrome.storage.sync.set({ autoReplaceHeadlines: newValue }, () => {
+        console.log('Auto Headline Replacement set to', newValue);
+      });
+    });
+  }
+});
+
 // Helper to check if user is authenticated
 async function isAuthenticated() {
   const { access_jwt, user } = await chrome.storage.local.get(['access_jwt', 'user']);

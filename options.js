@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const preferedLang = document.getElementById('preferedLang');
   const customPromptsSection = document.getElementById('customPromptsSection');
   const premiumContainer = document.getElementById('premiumContainer');
+  const autoReplaceCheckbox = document.getElementById('autoReplaceHeadlines');
 
   const systemPromptCounter = document.getElementById('systemPromptCounter');
   const customPromptCounter = document.getElementById('customPromptCounter');
@@ -68,7 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  chrome.storage.sync.get(['characterMode', 'systemPrompt', 'customPrompt', 'modifiedPrompts', 'preferedLang'], (data) => {
+  chrome.storage.sync.get(['characterMode', 'systemPrompt', 'customPrompt', 'modifiedPrompts', 'preferedLang', 'autoReplaceHeadlines'], (data) => {
     chrome.storage.local.get(['access_jwt'], (localData) => {
       let premium = false;
       if (localData.access_jwt) {
@@ -96,6 +97,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updateCharacterModeUI();
       loadPromptsForMode(currentCharacterMode);
+      if (autoReplaceCheckbox) {
+        autoReplaceCheckbox.checked = (typeof data.autoReplaceHeadlines === 'boolean') ? data.autoReplaceHeadlines : true;
+      }
     })
   });
 
@@ -199,7 +203,8 @@ document.addEventListener('DOMContentLoaded', () => {
   saveBtn.onclick = () => {
     const dataToSave = {
       characterMode: currentCharacterMode,
-      preferedLang: preferedLang.value
+      preferedLang: preferedLang.value,
+      autoReplaceHeadlines: autoReplaceCheckbox ? autoReplaceCheckbox.checked : true
     };
 
     if (isPremium) {
@@ -264,6 +269,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       preferedLang.value = 'english';
+      if (autoReplaceCheckbox) autoReplaceCheckbox.checked = true;
 
       status.textContent = 'Settings Reset!';
       status.style.color = '#4285F4';

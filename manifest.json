@@ -7,7 +7,9 @@
     "activeTab",
     "scripting",
     "storage",
-    "identity"
+    "identity",
+    "contextMenus",
+    "notifications"
   ],
   "host_permissions": [
     "https://api.groq.com/*",
