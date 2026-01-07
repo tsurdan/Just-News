@@ -1,33 +1,23 @@
-// TODO: Move premium handling to server side
-// TODO: move all model, summary and prompt to server side (and change temperature according to mode)
+// TODO: change temperature according to mode, and give summary according to premium
 // TODO: Support in-article title replacement
 // TODO: Implement some caching mechanism (inside extension)?
-// TODO: Add clean mode
-
-let premium = false; // Track premium status
+// TODO: Optimize clean mode
+// TODO: Prod
 let autoReplaceHeadlines = true; // Default: enabled
 let isInitialized = false;
 let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
-let ipu = false;
 let isLoginPromptShown = false; // Prevent duplicate login prompts
 let userSelectedElement = null; // Store user's selected headline element
 
-// Function to initialize premium status - only called once during startup
-async function initializePremiumStatus() {
+// Helper function to check if user has premium from JWT (via background script)
+async function isPremiumUser() {
   try {
-    const response = await chrome.runtime.sendMessage({ action: 'checkPremium' });
-    ipu = response.ipb;
-    console.log('Premium status initialized:', ipu);
-  } catch (error) {
-    console.log('Error checking premium status:', error);
-    ipu = false;
+    const response = await chrome.runtime.sendMessage({ action: 'checkPremiumStatus' });
+    return response?.isPremium || false;
+  } catch (e) {
+    return false;
   }
-}
-
-// Sync function to check premium status - uses cached value
-function ipb() {
-  return ipu;
 }
 
 async function initializeContentScript() {
@@ -46,9 +36,6 @@ async function initializeContentScript() {
       summarizeHeadlines();
     }
   });
-
-  // Initialize premium status
-  await initializePremiumStatus();
 
   // Add tooltip styles to the page
   addTooltipStyles();
@@ -71,11 +58,6 @@ async function initializeContentScript() {
       }
       summarizeHeadlines();
       sendResponse({status: 'Processing started'});
-    } else if (request.action === 'premiumStatusChanged') {
-      // Update cached premium status when it changes
-      ipu = request.ipb;
-      console.log('Premium status updated:', ipu);
-      sendResponse({status: 'premium status updated'});
     } else if (request.action === 'promptLogin') {
       // Show login prompt
       showLoginPrompt();
@@ -142,17 +124,19 @@ async function summarizeHeadlines() {
 
   try {
     const settings = await chrome.storage.sync.get(['model', 'customPrompt', 'systemPrompt', 'preferedLang']);
-    model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
-    preferedLang = settings.preferedLang || "english";
+    preferedLang = settings.preferedLang || preferedLang;
   } catch (error) {
     await createNotification('Error loading settings. Please try again.');
   }
-  const apiOptions = {"model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
+  const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
 
   const limit = 20; // Maximum headlines per click
   let firstHeadlineChanged = false;
+  
+  // Check premium status once at the start (instead of for each headline)
+  const hasPremium = await isPremiumUser();
 
   // This function will be injected into the page
   let headlines = Array.from(document.querySelectorAll('a, a span, h1, h2, h3, h4, h5, h6, span[class*="title"], span[class*="title"], strong[data-type*="title"], span[class*="headline"], strong[data-type*="headline"], span[data-type*="title"], strong[class*="title"], span[data-type*="headline"], strong[class*="headline"], span[class*="Title"], strong[data-type*="Title"], span[class*="Headline"], strong[data-type*="Headline"], span[data-type*="Title"], strong[class*="Title"], span[data-type*="Headline"], strong[class*="Headline"]'));
@@ -261,12 +245,12 @@ async function summarizeHeadlines() {
             // Parse the JSON response using dedicated function
             const { headline: newHeadline, summary } = parseAIResponse(result);
             
-            // Cache the summary for tooltip use
-            if (ipb()) {
+            // Cache the summary for tooltip use (only for premium users)
+            if (hasPremium) {
               articleSummaries.set(articleUrl, summary);
             }
 
-            typeHeadline(headline, `~${newHeadline}`);
+            typeHeadline(headline, `~${newHeadline}`, hasPremium);
             counter++;
 
             // Notify background to clear badge after first headline changes
@@ -611,7 +595,7 @@ function extractSecondFieldValue(text, fieldName) {
 
 
 
-function typeHeadline(element, text) {
+function typeHeadline(element, text, hasPremium = false) {
   // Mark the element as processed immediately to prevent double-processing
   element.classList.add('just-news-processed-headline');
   
@@ -646,8 +630,8 @@ function typeHeadline(element, text) {
       index++;
     } else {
       clearInterval(interval);
-      // Add tooltip functionality after typing is complete
-      if (ipb()) {
+      // Add tooltip functionality after typing is complete (only for premium users)
+      if (hasPremium) {
         setupTooltip(element);
       }
     }
@@ -822,30 +806,15 @@ async function fetchContent(url) {
 }
 
 async function summarizeContnet(sourceHeadline, content, options) {
-  const { model, customPrompt, systemPrompt, preferedLang } = options;
+  const { customPrompt, systemPrompt, preferedLang } = options;
   
-  // System-controlled instructions that users cannot modify
-  const systemInstructions = `
-
-Original: ${sourceHeadline}
-Article: ${content}
-
-IMPORTANT: You must return your response in this exact JSON format:
-{"new_headline": "<your rewritten headline>", "article_summary": "<2-3 sentence objective summary of the article>"}
-
-Do not add any text before or after the JSON. Only return the JSON object.`;
-
-  let prompt = customPrompt;
-  if (preferedLang != 'english') {
-    prompt += `(if ${preferedLang} generate ${preferedLang} headline).`;
-  } 
-  prompt += systemInstructions;
   const response = await chrome.runtime.sendMessage({
     action: 'AIcall',
+    content,
     sourceHeadline,
-    prompt,
-    model,
-    systemPrompt
+    prompt: customPrompt,
+    systemPrompt,
+    preferedLang
   });
   if (!response || response?.error || !response.summary) {
     const errorMsg = response?.error || 'Unknown error';

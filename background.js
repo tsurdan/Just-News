@@ -304,29 +304,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       });
     return true; // Will respond asynchronously
   } else if (request.action === 'AIcall') {
-    const model = request.model || 'meta-llama/llama-4-scout-17b-16e-instruct';
-    const systemPrompt = request.systemPrompt && request.systemPrompt.trim().length > 0
-      ? request.systemPrompt
-      : `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.`;
-
-    let prompt = request.prompt;
-    console.log(prompt);
+    const systemPrompt = request.systemPrompt;
+    const prompt = request.prompt;
 
     // Use authenticated proxy for Groq calls
-    const groqPayload = {
-      model: model,
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: prompt }
-      ],
-      temperature: 0.0,
-      max_tokens: 300,
-      top_p: 0.4,
-      frequency_penalty: 0.0,
-      presence_penalty: 0.0
+    const Payload = {
+      systemPrompt: systemPrompt,
+      prompt: prompt,
+      sourceHeadline: request.sourceHeadline,
+      content: request.content,
+      preferedLang: request.preferedLang || 'english'
     };
+    console.log(JSON.stringify(Payload));
 
-    callProxy(WORKER_URL, groqPayload)
+    callProxy(WORKER_URL, Payload)
       .then(data => {
         const summary = data.choices?.[0]?.message?.content || "";
         sendResponse({ summary: summary });
@@ -336,10 +327,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         sendResponse({ error: error.message });
       });
     return true; // Will respond asynchronously
-  } else if (request.action === 'checkPremium') {
-    // Check premium status from storage
-    chrome.storage.sync.get(['premium'], (result) => {
-      sendResponse({ ipb: !!result.premium });
+  } else if (request.action === 'checkPremiumStatus') {
+    // Check if user has premium from JWT
+    chrome.storage.local.get(['access_jwt'], (data) => {
+      let isPremium = false;
+      if (data.access_jwt) {
+        try {
+          const payload = data.access_jwt.split('.')[1];
+          const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+          isPremium = !!decoded.premium;
+        } catch (e) {
+          isPremium = false;
+        }
+      }
+      sendResponse({ isPremium: isPremium });
     });
     return true; // Will respond asynchronously
   } else if (request.action === 'headlineChanged') {
@@ -347,23 +348,6 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     chrome.action.setBadgeText({ tabId: sender.tab.id, text: '' });
     sendResponse({ status: 'badge cleared' });
     return;
-  }
-});
-
-const REQUIRED_TOKEN = 'e23de-32dd3-d2fg3fw-f34f3w';
-
-chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-  if (message.type === "activatePremium" && message.token == REQUIRED_TOKEN) {
-    chrome.storage.sync.set({ premium: true }, () => {
-      console.log('Premium unlocked via success page!');
-    });
-
-    setTimeout(() => {
-      chrome.runtime.openOptionsPage(() => {
-        console.log('Options page opened after premium unlock');
-      });
-    }, 10000);
-    return true;
   }
 });
 
