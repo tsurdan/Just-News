@@ -313,7 +313,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       prompt: prompt,
       sourceHeadline: request.sourceHeadline,
       content: request.content,
-      preferedLang: request.preferedLang || 'english'
+      preferedLang: request.preferedLang || 'english',
+      mode: request.mode || 'robot'
     };
     console.log(JSON.stringify(Payload));
 

@@ -1,7 +1,9 @@
-// TODO: change temperature according to mode, and give summary according to premium
 // TODO: Support in-article title replacement
 // TODO: Implement some caching mechanism (inside extension)?
 // TODO: Optimize clean mode
+// TODO: Handle pages with infinite scroll / dynamically loaded content
+// TODO: Fix UI design to be consistent in many sites
+// TODO: Make the server generic to work with other future extensions too
 // TODO: Prod
 let autoReplaceHeadlines = true; // Default: enabled
 let isInitialized = false;
@@ -114,6 +116,7 @@ async function summarizeHeadlines() {
   let customPrompt = "";
   let systemPrompt = "";
   let preferedLang = "english";
+  let mode = "";
   const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
   const defaultPrompt = `Rewrite the headline with these rules:
 
@@ -123,14 +126,15 @@ async function summarizeHeadlines() {
 - Be objective and informative`;
 
   try {
-    const settings = await chrome.storage.sync.get(['model', 'customPrompt', 'systemPrompt', 'preferedLang']);
+    const settings = await chrome.storage.sync.get(['characterMode', 'customPrompt', 'systemPrompt', 'preferedLang']);
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     preferedLang = settings.preferedLang || preferedLang;
+    mode = settings.characterMode || 'robot';
   } catch (error) {
     await createNotification('Error loading settings. Please try again.');
   }
-  const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
+  const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "mode": mode}; 
 
   const limit = 20; // Maximum headlines per click
   let firstHeadlineChanged = false;
@@ -243,7 +247,7 @@ async function summarizeHeadlines() {
         fetchSummary(sourceHeadline, articleUrl, apiOptions)
           .then(result => {
             // Parse the JSON response using dedicated function
-            const { headline: newHeadline, summary } = parseAIResponse(result);
+            const { headline: newHeadline, summary } = parseAIResponse(result, hasPremium);
             
             // Cache the summary for tooltip use (only for premium users)
             if (hasPremium) {
@@ -336,7 +340,7 @@ async function summarizeHeadlines() {
 }
 
 // Function to parse AI response and extract headline and summary
-function parseAIResponseOld(result) {
+function parseAIResponseOld(result, hasPremium) {
   let newHeadline, summary;
   
   // Clean the result first - remove markdown code blocks if present
@@ -352,7 +356,7 @@ function parseAIResponseOld(result) {
     // Try to parse as JSON
     const parsed = JSON.parse(cleanResult);
     newHeadline = parsed.new_headline || parsed.headline || parsed.title;
-    summary = parsed.article_summary || parsed.summary || parsed.description;
+    summary = hasPremium ? parsed.article_summary || parsed.summary || parsed.description : 'Summary unavailable';
     
     // If we don't have both parts, throw error to trigger fallback
     if (!newHeadline || !summary) {
@@ -377,7 +381,7 @@ function parseAIResponseOld(result) {
         try {
           const extracted = JSON.parse(match[0]);
           newHeadline = extracted.new_headline || extracted.headline || extracted.title;
-          summary = extracted.article_summary || extracted.summary || extracted.description;
+          summary = hasPremium ? extracted.article_summary || extracted.summary || extracted.description : 'Summary unavailable';
           
           if (newHeadline && summary) {
             jsonFound = true;
@@ -423,7 +427,7 @@ function parseAIResponseOld(result) {
   return { headline: sanitizedHeadline, summary: summary };
 }
 
-function parseAIResponseNew(result){
+function parseAIResponseNew(result, hasPremium) {
   // Handle the case where result might be an object with a 'text' property
   const text = typeof result === 'string' ? result : result?.text || result;
   
@@ -437,7 +441,7 @@ function parseAIResponseNew(result){
     if (parsed.new_headline || parsed.headline || parsed.title) {
       return {
         headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
-        summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
+        summary: hasPremium ? parsed.article_summary || parsed.summary || parsed.description : 'Summary unavailable'
       };
     }
   } catch (e) {
@@ -458,7 +462,7 @@ function parseAIResponseNew(result){
       const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, '');
       return {
         headline: headline,
-        summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
+        summary: hasPremium ? parsed.article_summary || parsed.summary || parsed.description : 'Summary unavailable'
       };
     }
   } catch (e) {
@@ -479,7 +483,7 @@ function parseAIResponseNew(result){
         const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, '');
         return {
           headline: headline,
-          summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
+          summary: hasPremium ? parsed.article_summary || parsed.summary || parsed.description : 'Summary unavailable'
         };
       }
     } catch (e2) {
@@ -495,7 +499,7 @@ function parseAIResponseNew(result){
       if (parsed.new_headline || parsed.headline || parsed.title) {
         return {
           headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
-          summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
+          summary: hasPremium ? parsed.article_summary || parsed.summary || parsed.description : 'Summary unavailable'
         };
       }
     } catch (e) {
@@ -507,11 +511,11 @@ function parseAIResponseNew(result){
   const headline = extractFirstFieldValue(text, 'new_headline');
   
   if (headline) {
-    const summary = extractSecondFieldValue(text, 'article_summary');
+    const summary = hasPremium ? extractSecondFieldValue(text, 'article_summary') : 'Summary unavailable';
 
     return {
       headline: headline.replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
-      summary: summary || 'Summary not available'
+      summary: summary || 'Summary unavailable'
     };
   }
   
@@ -523,11 +527,11 @@ function parseAIResponseNew(result){
  * @param {string} result - Pre-cleaned result string
  * @returns {object} - {headline: string, summary: string}
  */
-function parseAIResponse(result) {
+function parseAIResponse(result, hasPremium) {
   try {
-    return parseAIResponseOld(result);
+    return parseAIResponseOld(result, hasPremium);
   } catch {
-    return parseAIResponseNew(result);
+    return parseAIResponseNew(result, hasPremium);
   }
 }
 
@@ -806,7 +810,7 @@ async function fetchContent(url) {
 }
 
 async function summarizeContnet(sourceHeadline, content, options) {
-  const { customPrompt, systemPrompt, preferedLang } = options;
+  const { customPrompt, systemPrompt, preferedLang, mode } = options;
   
   const response = await chrome.runtime.sendMessage({
     action: 'AIcall',
@@ -814,7 +818,8 @@ async function summarizeContnet(sourceHeadline, content, options) {
     sourceHeadline,
     prompt: customPrompt,
     systemPrompt,
-    preferedLang
+    preferedLang,
+    mode
   });
   if (!response || response?.error || !response.summary) {
     const errorMsg = response?.error || 'Unknown error';
