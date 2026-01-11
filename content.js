@@ -1,9 +1,10 @@
-// TODO: Support in-article title replacement
+// TODO: Fix: don't replace links in article body on article pages
 // TODO: Implement some caching mechanism (inside extension)?
 // TODO: Optimize clean mode
 // TODO: Handle pages with infinite scroll / dynamically loaded content
 // TODO: Fix UI design to be consistent in many sites
-// TODO: Make the server generic to work with other future extensions too
+// TODO: Make the working with server generic to other future extensions too
+// TODO: Legal: update privacy policy and legal research
 // TODO: Prod
 let autoReplaceHeadlines = true; // Default: enabled
 let isInitialized = false;
@@ -11,6 +12,145 @@ let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
 let isLoginPromptShown = false; // Prevent duplicate login prompts
 let userSelectedElement = null; // Store user's selected headline element
+
+// Detect if we're on an article page or homepage
+// Detect if we're on an article page (simplified - just checks if there's a main article to process)
+function isArticlePage() {
+  const h1Tags = document.querySelectorAll('h1');
+  const paragraphs = document.querySelectorAll('p');
+  
+  // Must have exactly one H1 (main article headline)
+  if (h1Tags.length !== 1) {
+    return false;
+  }
+  
+  // Must have substantial content (at least 3 paragraphs)
+  if (paragraphs.length < 3) {
+    return false;
+  }
+  
+  // Calculate total paragraph text length
+  const paragraphText = Array.from(paragraphs)
+    .map(p => p.textContent.trim())
+    .join(' ');
+  
+  // Must have substantial content (at least 500 characters)
+  if (paragraphText.length < 500) {
+    return false;
+  }
+  
+  // Check if H1 is already processed (avoid double-processing)
+  const h1 = h1Tags[0];
+  if (h1.classList.contains('just-news-processed-headline') || h1.textContent.includes('~')) {
+    return false;
+  }
+  
+  // Passed all checks - this is an article page with a main headline to process
+  return true;
+}
+
+// Extract article headline from article page
+function extractArticleHeadline() {
+  // Try multiple selectors in order of preference
+  const selectors = [
+    'h1[itemprop="headline"]',
+    'h1.article-title',
+    'h1.entry-title',
+    'h1.post-title',
+    'article h1',
+    '[role="article"] h1',
+    '.article-header h1',
+    '.post-header h1',
+    'h1', // Fallback to first h1
+  ];
+  
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (element && element.textContent.trim()) {
+      return {
+        element: element,
+        text: element.textContent.trim()
+      };
+    }
+  }
+  
+  return null;
+}
+
+// Extract article content from article page (reuse existing logic)
+function extractArticleContent() {
+  // Try to find article container
+  const articleSelectors = [
+    'article',
+    '[role="article"]',
+    '.article-content',
+    '.post-content',
+    '.entry-content',
+    '.story-body',
+    'main',
+  ];
+  
+  let articleContainer = null;
+  for (const selector of articleSelectors) {
+    articleContainer = document.querySelector(selector);
+    if (articleContainer) break;
+  }
+  
+  // If no article container found, use body
+  if (!articleContainer) {
+    articleContainer = document.body;
+  }
+  
+  // Remove unwanted elements
+  const unwantedSelectors = [
+    'script', 'style', 'nav', 'header', 'footer', 
+    'aside', '.sidebar', '.advertisement', '.ad', 
+    '.comments', '.related-articles'
+  ];
+  
+  const clone = articleContainer.cloneNode(true);
+  unwantedSelectors.forEach(selector => {
+    clone.querySelectorAll(selector).forEach(el => el.remove());
+  });
+  
+  // Extract text from paragraphs
+  const paragraphs = Array.from(clone.querySelectorAll('p'));
+  let content = paragraphs.map(p => p.textContent.trim()).filter(t => t.length > 0).join(' ');
+  
+  // If not enough content, try other elements
+  if (!content || content.length < 100) {
+    const textElements = Array.from(clone.querySelectorAll('div, span'));
+    content = textElements
+      .map(el => el.textContent.trim())
+      .filter(t => t.length > 50)
+      .join(' ');
+  }
+  
+  return content;
+}
+
+// Helper function to check if a headline is inside article paragraph content
+function isInsideArticleParagraph(headline) {
+  // Check if this element or any of its ancestors is a <p> tag or inside a <p> tag
+  let element = headline;
+  
+  // First check the element itself
+  if (element.tagName === 'P') {
+    return true;
+  }
+  
+  // Then check all parent elements up the tree
+  let parent = element.parentElement;
+  while (parent && parent !== document.body) {
+    if (parent.tagName === 'P') {
+      // This element is inside a paragraph - it's inline article content
+      return true;
+    }
+    parent = parent.parentElement;
+  }
+  
+  return false;
+}
 
 // Helper function to check if user has premium from JWT (via background script)
 async function isPremiumUser() {
@@ -112,6 +252,108 @@ function addTooltipStyles() {
 }
 
 async function summarizeHeadlines() {
+  // Check if this is an article page first
+  const isArticle = isArticlePage();
+  
+  // STEP 1: Always process linked headlines (homepage-style processing)
+  // This catches related articles, navigation links, etc.
+  await summarizeHomepageHeadlines(isArticle);
+  
+  // STEP 2: Additionally check if this is an article page and process the main headline
+  if (isArticle) {
+    // Also replace the main article headline (non-linked h1)
+    await createNotification('is article');
+    await summarizeArticleHeadline();
+  }
+}
+
+// New function to handle article page headline replacement
+async function summarizeArticleHeadline() {
+  let model = "";
+  let customPrompt = "";
+  let systemPrompt = "";
+  let preferedLang = "english";
+  let mode = "";
+  const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.`;
+  const defaultPrompt = `Rewrite the headline with these rules:
+
+- Robotic, factual, no clickbait
+- Summarize the key point of the article
+- Keep the original language (if Hebrew, give new Hebrew title) and similar length
+- Be objective and informative`;
+
+  try {
+    const settings = await chrome.storage.sync.get(['characterMode', 'customPrompt', 'systemPrompt', 'preferedLang']);
+    customPrompt = settings.customPrompt || defaultPrompt;
+    systemPrompt = settings.systemPrompt || defaultSystemPrompt;
+    preferedLang = settings.preferedLang || preferedLang;
+    mode = settings.characterMode || 'robot';
+  } catch (error) {
+    await createNotification('Error loading settings. Please try again.');
+    return;
+  }
+  
+  const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "mode": mode};
+  
+  // Extract article headline and content
+  const headlineData = extractArticleHeadline();
+  if (!headlineData) {
+    await createNotification('Could not find article headline on this page.');
+    return;
+  }
+  
+  const content = extractArticleContent();
+  if (!content || content.length < 100) {
+    await createNotification('Could not extract article content from this page.');
+    return;
+  }
+  
+  const sourceHeadline = headlineData.text;
+  const headlineElement = headlineData.element;
+  
+  // Check premium status
+  const hasPremium = await isPremiumUser();
+  
+  try {
+    // Call AI to get new headline (pass content directly instead of URL)
+    const summary = await summarizeContentDirectly(
+      sourceHeadline,
+      content,
+      apiOptions
+    );
+    
+    // Parse the AI response
+    const { headline: newHeadline, summary: articleSummary } = parseAIResponse(summary, hasPremium);
+    
+    // Replace the headline with typing effect
+    typeHeadline(headlineElement, `~${newHeadline}`, hasPremium);
+    
+    // Cache the summary if premium user
+    if (hasPremium && articleSummary) {
+      articleSummaries.set(window.location.href, articleSummary);
+    }
+    
+    // Clear badge
+    chrome.runtime.sendMessage({ action: 'headlineChanged' });
+    
+  } catch (error) {
+    if (error.message && error.message.includes('Rate limit')) {
+      await createNotification(error.message);
+    } else if (error.message && error.message.includes('Daily quota exceeded')) {
+      await createPremiumNotification('Daily limit exceeded. Please upgrade to premium for more usage.');
+    } else if (error.message && error.message.includes('Session expired')) {
+      if (!isLoginPromptShown) {
+        isLoginPromptShown = true;
+        showLoginPrompt();
+      }
+    } else {
+      await createNotification('Error: ' + error.message);
+    }
+  }
+}
+
+// Renamed original function to handle homepage headlines
+async function summarizeHomepageHeadlines(isArticle = false) {
   let model = "";
   let customPrompt = "";
   let systemPrompt = "";
@@ -202,8 +444,17 @@ async function summarizeHeadlines() {
     return true;
   });
 
-  // Filter out subject headlines
-  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 3);
+  // Filter out links inside article paragraphs (only when on article page)
+  // This preserves sidebar/related links but removes inline text links
+  if (isArticle) {
+    headlines = headlines.filter(headline => !isInsideArticleParagraph(headline));
+  }
+
+  // Filter out subject headlines (trim and filter empty strings to get actual word count)
+  headlines = headlines.filter(headline => {
+    const words = headline.textContent.trim().split(/\s+/).filter(w => w.length > 0);
+    return words.length > 3;
+  });
 
   // Prioritize user-selected headline if exists
   if (userSelectedElement) {
@@ -648,7 +899,8 @@ function setupTooltip(element) {
   
   let tooltip = null;
   let tooltipTimeout = null;
-  const articleUrl = element.href || element.closest('a')?.href || element.querySelector('a')?.href;
+  // For article pages, the headline is not a link, so use current page URL as fallback
+  const articleUrl = element.href || element.closest('a')?.href || element.querySelector('a')?.href || window.location.href;
   
   if (!articleUrl) return;
   
@@ -836,6 +1088,11 @@ async function summarizeContnet(sourceHeadline, content, options) {
     throw new Error('Error fetching AI summary ' + errorMsg);
   }
   return response.summary;
+}
+
+// New helper function to summarize content directly (without fetching from URL)
+async function summarizeContentDirectly(sourceHeadline, content, options) {
+  return await summarizeContnet(sourceHeadline, content, options);
 }
 
 function createNotificationPrompt(message) {
