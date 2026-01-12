@@ -1,17 +1,195 @@
-// TODO: Fix: don't replace links in article body on article pages
-// TODO: Implement some caching mechanism (inside extension)?
 // TODO: Optimize clean mode
-// TODO: Handle pages with infinite scroll / dynamically loaded content
+// TODO: Support compitability to the back, premium from local storage, in server
 // TODO: Fix UI design to be consistent in many sites
 // TODO: Make the working with server generic to other future extensions too
 // TODO: Legal: update privacy policy and legal research
 // TODO: Prod
+
+// Cache configuration
+const CACHE_PREFIX = 'justnews_cache_';
+const CACHE_TTL_DAYS = 1; // Cache expires after 1 day
+const MAX_CACHE_ENTRIES = 500; // Limit cache size to prevent storage bloat
+const CACHE_VERSION = 'v1'; // Increment to invalidate old cache format
+const MAX_CACHE_ENTRY_SIZE = 3000; // Max bytes per cache entry
+
 let autoReplaceHeadlines = true; // Default: enabled
 let isInitialized = false;
 let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
 let isLoginPromptShown = false; // Prevent duplicate login prompts
 let userSelectedElement = null; // Store user's selected headline element
+let lastScrollY = 0; // Track scroll position for dynamic processing
+let scrollProcessingTimeout = null; // Debounce scroll processing
+let isAutomaticProcessing = false; // Flag to suppress notifications during automatic scroll processing
+
+// ============= CACHE UTILITIES =============
+
+/**
+ * Generate cache key from URL, headline, and API options
+ * @param {string} url - Article URL
+ * @param {string} headline - Original headline text
+ * @param {Object} apiOptions - API options (mode, prompts, language)
+ * @returns {string} Cache key
+ */
+function generateCacheKey(url, headline, apiOptions = {}) {
+  // Use URL + headline + settings hash for uniqueness
+  // Different mode or prompts = different cache entry
+  const normalizedUrl = url.split('?')[0].split('#')[0]; // Remove query params and hash
+  const headlineHash = simpleHash(headline.trim().toLowerCase());
+  
+  // Include mode, prompts, and language in cache key
+  const settingsString = JSON.stringify({
+    mode: apiOptions.mode || 'robot',
+    customPrompt: apiOptions.customPrompt || '',
+    systemPrompt: apiOptions.systemPrompt || '',
+    preferedLang: apiOptions.preferedLang || 'english'
+  });
+  const settingsHash = simpleHash(settingsString);
+  
+  return `${CACHE_PREFIX}${CACHE_VERSION}_${normalizedUrl}_${headlineHash}_${settingsHash}`;
+}
+
+/**
+ * Simple hash function for creating cache keys
+ */
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32-bit integer
+  }
+  return Math.abs(hash).toString(36);
+}
+
+/**
+ * Get cached headline result
+ * @param {string} url - Article URL
+ * @param {string} originalHeadline - Original headline text
+ * @param {Object} apiOptions - API options to match against cache
+ * @returns {Promise<Object|null>} Cached result or null if not found/expired
+ */
+async function getCachedHeadline(url, originalHeadline, apiOptions = {}) {
+  try {
+    const cacheKey = generateCacheKey(url, originalHeadline, apiOptions);
+    const result = await chrome.storage.local.get(cacheKey);
+    
+    if (!result[cacheKey]) {
+      return null;
+    }
+    
+    const cached = result[cacheKey];
+    const now = Date.now();
+    const age = now - cached.timestamp;
+    const maxAge = CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+    
+    // Check if cache is expired
+    if (age > maxAge) {
+      // Remove expired entry
+      await chrome.storage.local.remove(cacheKey);
+      return null;
+    }
+    
+    return cached;
+  } catch (error) {
+    console.error('Error reading cache:', error);
+    return null;
+  }
+}
+
+/**
+ * Save headline result to cache
+ * @param {string} url - Article URL
+ * @param {string} originalHeadline - Original headline text
+ * @param {string} newHeadline - AI-generated headline
+ * @param {string} summary - Article summary (for premium users)
+ * @param {Object} apiOptions - API options used to generate this headline
+ */
+async function setCachedHeadline(url, originalHeadline, newHeadline, summary, apiOptions = {}) {
+  try {
+    const cacheKey = generateCacheKey(url, originalHeadline, apiOptions);
+    const cacheData = {
+      url,
+      originalHeadline,
+      newHeadline,
+      summary,
+      timestamp: Date.now(),
+      version: CACHE_VERSION
+    };
+    
+    // Calculate approximate size (rough estimate in bytes)
+    const approximateSize = JSON.stringify(cacheData).length;
+    
+    // Only cache if size is reasonable - skip oversized entries
+    if (approximateSize > MAX_CACHE_ENTRY_SIZE) {
+      console.warn('Cache entry too large, skipping:', approximateSize, 'bytes');
+      return;
+    }
+    
+    await chrome.storage.local.set({ [cacheKey]: cacheData });
+    
+    // Cleanup old entries if cache is getting too large
+    await cleanupCacheIfNeeded();
+  } catch (error) {
+    console.error('Error writing cache:', error);
+  }
+}
+
+/**
+ * Clean up expired cache entries and enforce size limits
+ */
+async function cleanupCacheIfNeeded() {
+  try {
+    // Get all storage keys
+    const allData = await chrome.storage.local.get(null);
+    const cacheKeys = Object.keys(allData).filter(key => key.startsWith(CACHE_PREFIX));
+    
+    // If under limit, no cleanup needed
+    if (cacheKeys.length < MAX_CACHE_ENTRIES) {
+      return;
+    }
+    
+    const now = Date.now();
+    const maxAge = CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+    const entriesToRemove = [];
+    const validEntries = [];
+    
+    // Separate expired and valid entries
+    for (const key of cacheKeys) {
+      const entry = allData[key];
+      if (!entry || !entry.timestamp) {
+        entriesToRemove.push(key);
+        continue;
+      }
+      
+      const age = now - entry.timestamp;
+      if (age > maxAge || entry.version !== CACHE_VERSION) {
+        entriesToRemove.push(key);
+      } else {
+        validEntries.push({ key, timestamp: entry.timestamp });
+      }
+    }
+    
+    // If still over limit after removing expired, remove oldest entries
+    if (validEntries.length > MAX_CACHE_ENTRIES) {
+      validEntries.sort((a, b) => a.timestamp - b.timestamp); // Sort by oldest first
+      const toRemove = validEntries.length - MAX_CACHE_ENTRIES;
+      for (let i = 0; i < toRemove; i++) {
+        entriesToRemove.push(validEntries[i].key);
+      }
+    }
+    
+    // Remove entries in batch
+    if (entriesToRemove.length > 0) {
+      await chrome.storage.local.remove(entriesToRemove);
+      console.log(`Cache cleanup: removed ${entriesToRemove.length} entries`);
+    }
+  } catch (error) {
+    console.error('Error during cache cleanup:', error);
+  }
+}
+
+// ============= END CACHE UTILITIES =============
 
 // Detect if we're on an article page or homepage
 // Detect if we're on an article page (simplified - just checks if there's a main article to process)
@@ -36,12 +214,6 @@ function isArticlePage() {
   
   // Must have substantial content (at least 500 characters)
   if (paragraphText.length < 500) {
-    return false;
-  }
-  
-  // Check if H1 is already processed (avoid double-processing)
-  const h1 = h1Tags[0];
-  if (h1.classList.contains('just-news-processed-headline') || h1.textContent.includes('~')) {
     return false;
   }
   
@@ -162,6 +334,57 @@ async function isPremiumUser() {
   }
 }
 
+// Setup scroll listener to process headlines as user scrolls
+function setupScrollListener() {
+  let isProcessing = false;
+
+  window.addEventListener('scroll', () => {
+    // Check if auto-replace is still enabled
+    if (!autoReplaceHeadlines || isProcessing) return;
+
+    const currentScrollY = window.scrollY;
+    const scrollDifference = Math.abs(currentScrollY - lastScrollY);
+
+    // Only process if scrolled more than 300px (significant scroll)
+    if (scrollDifference > 300) {
+      // Debounce: wait for scrolling to settle
+      clearTimeout(scrollProcessingTimeout);
+      scrollProcessingTimeout = setTimeout(async () => {
+        isProcessing = true;
+        isAutomaticProcessing = true; // Enable silent mode
+        lastScrollY = currentScrollY;
+        
+        // Re-run headline processing (will skip already processed headlines with ~)
+        counter = 0; // Reset counter to process from the beginning
+        await summarizeHeadlines();
+        
+        isAutomaticProcessing = false; // Disable silent mode
+        isProcessing = false;
+      }, 500); // Wait 500ms after scrolling stops
+    }
+  }, { passive: true });
+
+  // Also handle dynamically added content
+  const mutationObserver = new MutationObserver(() => {
+    if (!autoReplaceHeadlines || isProcessing) return;
+    
+    clearTimeout(scrollProcessingTimeout);
+    scrollProcessingTimeout = setTimeout(async () => {
+      isProcessing = true;
+      isAutomaticProcessing = true; // Enable silent mode
+      counter = 0;
+      await summarizeHeadlines();
+      isAutomaticProcessing = false; // Disable silent mode
+      isProcessing = false;
+    }, 1000); // Wait longer for DOM changes to settle
+  });
+
+  mutationObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+}
+
 async function initializeContentScript() {
   if (isInitialized) return;
 
@@ -176,6 +399,8 @@ async function initializeContentScript() {
     // If enabled, run headline replacement automatically
     if (autoReplaceHeadlines) {
       summarizeHeadlines();
+      // Set up scroll listener for dynamic headline processing
+      setupScrollListener();
     }
   });
 
@@ -257,12 +482,15 @@ async function summarizeHeadlines() {
   
   // STEP 1: Always process linked headlines (homepage-style processing)
   // This catches related articles, navigation links, etc.
-  await summarizeHomepageHeadlines(isArticle);
+  try {
+      await summarizeHomepageHeadlines(isArticle);
+  } catch (error) {
+      console.log('Error processing headlines: ' + error.message);
+  }
   
   // STEP 2: Additionally check if this is an article page and process the main headline
   if (isArticle) {
     // Also replace the main article headline (non-linked h1)
-    await createNotification('is article');
     await summarizeArticleHeadline();
   }
 }
@@ -301,6 +529,10 @@ async function summarizeArticleHeadline() {
     await createNotification('Could not find article headline on this page.');
     return;
   }
+  if (headlineData.text.startsWith('~')) {
+    // Already processed
+    return;
+  }
   
   const content = extractArticleContent();
   if (!content || content.length < 100) {
@@ -310,9 +542,26 @@ async function summarizeArticleHeadline() {
   
   const sourceHeadline = headlineData.text;
   const headlineElement = headlineData.element;
+  const articleUrl = window.location.href;
   
   // Check premium status
   const hasPremium = await isPremiumUser();
+  
+  // Check cache first
+  const cached = await getCachedHeadline(articleUrl, sourceHeadline, apiOptions);
+  if (cached) {
+    // Use cached result - instant replacement, no animation
+    typeHeadline(headlineElement, `~${cached.newHeadline}`, hasPremium, true);
+    
+    // Cache the summary for tooltip if premium user
+    if (hasPremium && cached.summary) {
+      articleSummaries.set(articleUrl, cached.summary);
+    }
+    
+    // Clear badge
+    chrome.runtime.sendMessage({ action: 'headlineChanged' });
+    return;
+  }
   
   try {
     // Call AI to get new headline (pass content directly instead of URL)
@@ -325,18 +574,26 @@ async function summarizeArticleHeadline() {
     // Parse the AI response
     const { headline: newHeadline, summary: articleSummary } = parseAIResponse(summary, hasPremium);
     
+    // Save to cache
+    await setCachedHeadline(articleUrl, sourceHeadline, newHeadline, articleSummary, apiOptions);
+    
     // Replace the headline with typing effect
-    typeHeadline(headlineElement, `~${newHeadline}`, hasPremium);
+    typeHeadline(headlineElement, `~${newHeadline}`, hasPremium, false);
     
     // Cache the summary if premium user
     if (hasPremium && articleSummary) {
-      articleSummaries.set(window.location.href, articleSummary);
+      articleSummaries.set(articleUrl, articleSummary);
     }
     
     // Clear badge
     chrome.runtime.sendMessage({ action: 'headlineChanged' });
     
   } catch (error) {
+    if (isAutomaticProcessing) {
+      // Silently skip errors during automatic processing
+      return;
+    }
+    
     if (error.message && error.message.includes('Rate limit')) {
       await createNotification(error.message);
     } else if (error.message && error.message.includes('Daily quota exceeded')) {
@@ -495,25 +752,45 @@ async function summarizeHomepageHeadlines(isArticle = false) {
     const articleUrl = headline.href || headline.closest('a')?.href || headline.querySelector('a')?.href;
     if (articleUrl) {
       promises.push(
-        fetchSummary(sourceHeadline, articleUrl, apiOptions)
-          .then(result => {
-            // Parse the JSON response using dedicated function
-            const { headline: newHeadline, summary } = parseAIResponse(result, hasPremium);
+        (async () => {
+          // Check cache first
+          const cached = await getCachedHeadline(articleUrl, sourceHeadline, apiOptions);
+          if (cached) {
+            // Use cached result - instant replacement, no animation
+            typeHeadline(headline, `~${cached.newHeadline}`, hasPremium, true);
             
-            // Cache the summary for tooltip use (only for premium users)
-            if (hasPremium) {
-              articleSummaries.set(articleUrl, summary);
+            // Cache the summary for tooltip if premium user
+            if (hasPremium && cached.summary) {
+              articleSummaries.set(articleUrl, cached.summary);
             }
-
-            typeHeadline(headline, `~${newHeadline}`, hasPremium);
+            
             counter++;
+            return;
+          }
+          
+          // Not in cache - fetch from AI
+          const result = await fetchSummary(sourceHeadline, articleUrl, apiOptions);
+          
+          // Parse the JSON response using dedicated function
+          const { headline: newHeadline, summary } = parseAIResponse(result, hasPremium);
+          
+          // Save to cache
+          await setCachedHeadline(articleUrl, sourceHeadline, newHeadline, summary, apiOptions);
+          
+          // Cache the summary for tooltip use (only for premium users)
+          if (hasPremium) {
+            articleSummaries.set(articleUrl, summary);
+          }
 
-            // Notify background to clear badge after first headline changes
-            if (!firstHeadlineChanged) {
-              firstHeadlineChanged = true;
-              chrome.runtime.sendMessage({ action: 'headlineChanged' });
-            }
-          })
+          typeHeadline(headline, `~${newHeadline}`, hasPremium, false);
+          counter++;
+
+          // Notify background to clear badge after first headline changes
+          if (!firstHeadlineChanged) {
+            firstHeadlineChanged = true;
+            chrome.runtime.sendMessage({ action: 'headlineChanged' });
+          }
+        })()
           .catch(error => {
             // Skip this headline if there's an error (including JSON parsing issues)
             if (error.message && error.message.includes('Rate limit')) {
@@ -531,6 +808,12 @@ async function summarizeHomepageHeadlines(isArticle = false) {
   const results = await Promise.allSettled(promises);
   const succes = results.filter(result => result.status === 'fulfilled');  
   const errors = results.filter(result => result.status === 'rejected');
+  
+  // Skip notifications during automatic processing
+  if (isAutomaticProcessing) {
+    return;
+  }
+  
   if (succes.length === 0 && errors.length > 0) {
     let minRetryAfter = null;
     let hasRateLimit = false;
@@ -850,7 +1133,7 @@ function extractSecondFieldValue(text, fieldName) {
 
 
 
-function typeHeadline(element, text, hasPremium = false) {
+function typeHeadline(element, text, hasPremium = false, fromCache = false) {
   // Mark the element as processed immediately to prevent double-processing
   element.classList.add('just-news-processed-headline');
   
@@ -877,6 +1160,17 @@ function typeHeadline(element, text, hasPremium = false) {
     }
   }
   
+  // If from cache, replace immediately without animation
+  if (fromCache) {
+    targetElement.textContent = text;
+    // Add tooltip functionality immediately (only for premium users)
+    if (hasPremium) {
+      setupTooltip(element);
+    }
+    return;
+  }
+  
+  // Otherwise, use typing animation
   let index = 0;
   targetElement.textContent = '';
   const interval = setInterval(() => {
@@ -1014,7 +1308,7 @@ async function fetchSummary(sourceHeadline, url, options) {
 async function fetchContent(url) {
   const response = await chrome.runtime.sendMessage({ action: 'fetchContent', url: url });
   if (!response || response?.error || !response.html) {
-    throw new Error('Error fetching article content' + response?.error);
+    throw new Error('Error fetching article content ' + response?.error);
   }
   const parser = new DOMParser();
   const doc = parser.parseFromString(response.html, 'text/html');
@@ -1758,5 +2052,7 @@ function createPremiumNotification(message) {
   });
 }
 
+// Initialize cache cleanup on startup (run once per page load)
+cleanupCacheIfNeeded().catch(err => console.error('Initial cache cleanup failed:', err));
 
 initializeContentScript();
