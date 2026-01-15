@@ -1,8 +1,7 @@
 // TODO: Optimize clean mode
-// TODO: Support compitability to the back, premium from local storage, in server
-// TODO: Fix UI design to be consistent in many sites
+// TODO: Support compatibility to the back, premium from local storage, in server
 // TODO: Make the working with server generic to other future extensions too
-// TODO: Legal: update privacy policy and legal research
+// TODO: Legal: update privacy policy and make legal research
 // TODO: Prod
 
 // Cache configuration
@@ -191,7 +190,6 @@ async function cleanupCacheIfNeeded() {
 
 // ============= END CACHE UTILITIES =============
 
-// Detect if we're on an article page or homepage
 // Detect if we're on an article page (simplified - just checks if there's a main article to process)
 function isArticlePage() {
   const h1Tags = document.querySelectorAll('h1');
@@ -398,7 +396,22 @@ async function initializeContentScript() {
 
     // If enabled, run headline replacement automatically
     if (autoReplaceHeadlines) {
-      summarizeHeadlines();
+      // Wait for DOM to be ready and content to render
+      if (document.readyState === 'loading') {
+        // DOM is still loading
+        document.addEventListener('DOMContentLoaded', () => {
+          // Give a small delay for dynamic content to render
+          setTimeout(() => {
+            summarizeHeadlines();
+          }, 500);
+        });
+      } else {
+        // DOM is already loaded (interactive or complete)
+        // Give a small delay for dynamic content to render
+        setTimeout(() => {
+          summarizeHeadlines();
+        }, 500);
+      }
       // Set up scroll listener for dynamic headline processing
       setupScrollListener();
     }
@@ -443,6 +456,16 @@ function addTooltipStyles() {
   const style = document.createElement('style');
   style.id = 'just-news-tooltip-styles';
   style.textContent = `
+    /* Targeted reset for Just News popups to prevent website CSS interference */
+    .just-news-popup-reset {
+      all: unset !important;
+    }
+    
+    .just-news-popup-reset * {
+      font-family: inherit !important;
+      box-sizing: border-box !important;
+    }
+    
     .just-news-tooltip {
       position: fixed;
       background: rgba(0, 0, 0, 0.9);
@@ -517,7 +540,9 @@ async function summarizeArticleHeadline() {
     preferedLang = settings.preferedLang || preferedLang;
     mode = settings.characterMode || 'robot';
   } catch (error) {
-    await createNotification('Error loading settings. Please try again.');
+    if (!isAutomaticProcessing) {
+      await createNotification('Error loading settings. Please try again.');
+    }
     return;
   }
   
@@ -526,7 +551,9 @@ async function summarizeArticleHeadline() {
   // Extract article headline and content
   const headlineData = extractArticleHeadline();
   if (!headlineData) {
-    await createNotification('Could not find article headline on this page.');
+    if (!isAutomaticProcessing) {
+      await createNotification('Could not find article headline on this page.');
+    }
     return;
   }
   if (headlineData.text.startsWith('~')) {
@@ -536,7 +563,9 @@ async function summarizeArticleHeadline() {
   
   const content = extractArticleContent();
   if (!content || content.length < 100) {
-    await createNotification('Could not extract article content from this page.');
+    if (!isAutomaticProcessing) {
+      await createNotification('Could not extract article content from this page.');
+    }
     return;
   }
   
@@ -589,23 +618,31 @@ async function summarizeArticleHeadline() {
     chrome.runtime.sendMessage({ action: 'headlineChanged' });
     
   } catch (error) {
-    if (isAutomaticProcessing) {
-      // Silently skip errors during automatic processing
+    // Always show daily rate limits, premium, and login prompts even in automatic mode
+    if (error.message && (error.message.includes('Daily limit exceeded') || error.message.includes('Daily token limit exceeded'))) {
+      await createNotification(error.message);
       return;
     }
     
-    if (error.message && error.message.includes('Rate limit')) {
-      await createNotification(error.message);
-    } else if (error.message && error.message.includes('Daily quota exceeded')) {
+    if (error.message && error.message.includes('Daily quota exceeded')) {
       await createPremiumNotification('Daily limit exceeded. Please upgrade to premium for more usage.');
-    } else if (error.message && error.message.includes('Session expired')) {
+      return;
+    }
+    
+    if (error.message && error.message.includes('Session expired')) {
       if (!isLoginPromptShown) {
         isLoginPromptShown = true;
         showLoginPrompt();
       }
-    } else {
-      await createNotification('Error: ' + error.message);
+      return;
     }
+    
+    // Silently skip other errors during automatic processing (including minute-based rate limits)
+    if (isAutomaticProcessing) {
+      return;
+    }
+    
+    await createNotification('Error: ' + error.message);
   }
 }
 
@@ -631,7 +668,9 @@ async function summarizeHomepageHeadlines(isArticle = false) {
     preferedLang = settings.preferedLang || preferedLang;
     mode = settings.characterMode || 'robot';
   } catch (error) {
-    await createNotification('Error loading settings. Please try again.');
+    if (!isAutomaticProcessing) {
+      await createNotification('Error loading settings. Please try again.');
+    }
   }
   const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "mode": mode}; 
 
@@ -684,19 +723,26 @@ async function summarizeHomepageHeadlines(isArticle = false) {
   });
 
   // Filter out headlines that are not visible in the viewport
+  // More lenient during automatic processing to catch more headlines
   headlines = headlines.filter(headline => {
-    const rect = headline.getBoundingClientRect();
     const style = window.getComputedStyle(headline);
     
-    // Check if headline is at least partially visible in viewport
-    if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
+    // Check if element is hidden via CSS
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) {
       return false;
     }
     
-    // Check if element is hidden via CSS
-    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0 || rect.width === 0 || rect.height === 0) {
+    const rect = headline.getBoundingClientRect();
+    
+    // Check for zero dimensions (truly hidden)
+    if (rect.width === 0 && rect.height === 0) {
       return false;
     }
+    
+      // Only show headlines in current viewport
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
+        return false;
+      }
     
     return true;
   });
@@ -843,32 +889,40 @@ async function summarizeHomepageHeadlines(isArticle = false) {
       if (dailyQuotaExceeded) {
         await createPremiumNotification('Daily limit exceeded. Please upgrade to premium for more usage.');
       } else {
-        // Format the retry message
-        let displayMessage = rateLimitMessage;
-        if (minRetryAfter !== null) {
-          const minutes = Math.floor(minRetryAfter / 60);
-          const seconds = minRetryAfter % 60;
-          if (minutes > 0) {
-            displayMessage = `Rate limit exceeded. Try again in ${minutes}m ${seconds}s`;
-          } else {
-            displayMessage = `Rate limit exceeded. Try again in ${seconds} seconds`;
+        // Only show notification for daily rate limits, not minute-based limits
+        if (rateLimitMessage.includes('Daily limit exceeded') || rateLimitMessage.includes('Daily token limit exceeded')) {
+          await createNotification(rateLimitMessage);
+        } else if (!isAutomaticProcessing) {
+          // Only show minute-based rate limits in manual mode
+          let displayMessage = rateLimitMessage;
+          if (minRetryAfter !== null) {
+            const minutes = Math.floor(minRetryAfter / 60);
+            const seconds = minRetryAfter % 60;
+            if (minutes > 0) {
+              displayMessage = `Rate limit exceeded. Try again in ${minutes}m ${seconds}s`;
+            } else {
+              displayMessage = `Rate limit exceeded. Try again in ${seconds} seconds`;
+            }
           }
+          await createNotification(displayMessage);
         }
-        await createNotification(displayMessage);
       }
     } else {
-      let errorTypes = new Set();
-      errors.forEach(e => {
-        let msg = e.reason.message || '';
-        if (msg.includes('Error extracting article content')) {
-          errorTypes.add('Error extracting article content');
-        } else {
-          errorTypes.add(msg.split(',')[0]);
-        }
-      });
-      let summary = Array.from(errorTypes).join(', ');
-      if (!summary.includes('Session expired. Please sign in'))
-      await createNotification(summary);
+      // Don't show generic error messages during automatic processing
+      if (!isAutomaticProcessing) {
+        let errorTypes = new Set();
+        errors.forEach(e => {
+          let msg = e.reason.message || '';
+          if (msg.includes('Error extracting article content')) {
+            errorTypes.add('Error extracting article content');
+          } else {
+            errorTypes.add(msg.split(',')[0]);
+          }
+        });
+        let summary = Array.from(errorTypes).join(', ');
+        if (!summary.includes('Session expired. Please sign in'))
+        await createNotification(summary);
+      }
     }
   }
 }
@@ -1170,15 +1224,31 @@ function typeHeadline(element, text, hasPremium = false, fromCache = false) {
     return;
   }
   
-  // Otherwise, use typing animation
+  // Otherwise, use typing animation with improved performance
   let index = 0;
   targetElement.textContent = '';
-  const interval = setInterval(() => {
+  
+  // Store interval ID on the element to prevent overlapping animations
+  if (targetElement._typingInterval) {
+    clearInterval(targetElement._typingInterval);
+  }
+  
+  targetElement._typingInterval = setInterval(() => {
+    // Safety check: ensure element is still in DOM
+    if (!document.body.contains(targetElement)) {
+      clearInterval(targetElement._typingInterval);
+      targetElement._typingInterval = null;
+      return;
+    }
+    
     if (index < text.length) {
-      targetElement.textContent += text[index];
-      index++;
+      // Performance optimization: batch character additions for smoother animation
+      const charsToAdd = Math.min(1, text.length - index); // Add up to 1 char at once
+      targetElement.textContent += text.substring(index, index + charsToAdd);
+      index += charsToAdd;
     } else {
-      clearInterval(interval);
+      clearInterval(targetElement._typingInterval);
+      targetElement._typingInterval = null;
       // Add tooltip functionality after typing is complete (only for premium users)
       if (hasPremium) {
         setupTooltip(element);
@@ -1389,118 +1459,434 @@ async function summarizeContentDirectly(sourceHeadline, content, options) {
   return await summarizeContnet(sourceHeadline, content, options);
 }
 
-function createNotificationPrompt(message) {
-  const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    backdrop-filter: blur(3px);
-    direction: ltr;
+// Helper function to create an isolated popup container using Shadow DOM
+function createIsolatedPopup() {
+  const host = document.createElement('div');
+  host.className = 'just-news-popup-host';
+  // Force LTR direction and reset all inherited properties to prevent RTL and stretching issues
+  host.style.cssText = `
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 2147483647 !important;
+    pointer-events: auto !important;
+    direction: ltr !important;
+    text-align: left !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    float: none !important;
+    display: block !important;
+    transform: none !important;
+    flex: none !important;
+    align-self: auto !important;
+    justify-self: auto !important;
   `;
-
-  const promptBox = document.createElement('div');
-  promptBox.style.cssText = `
-    background: white;
-    padding: 28px 24px;
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    width: 90%;
-    max-width: 400px;
-    box-sizing: border-box;
-    animation: slideIn 0.3s ease;
-    min-height: 160px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    direction: ltr;
-    text-align: left;
-  `;
-
-  const title = document.createElement('h3');
-  title.textContent = message;
-  title.style.cssText = `
-    text-align: center;
-    color: #333;
-    margin: 0 0 20px 0;
-    font-size: 16px;
-    line-height: 1.6;
-    font-weight: normal;
-    white-space: pre-line;
-    direction: ltr;
-  `;
-
-  const buttonContainer = document.createElement('div');
-  buttonContainer.style.cssText = `
-    display: flex;
-    direction: ltr;
-    justify-content: center;
-    align-items: center;
-    gap: 12px;
-  `;
-
-  const cancelButton = document.createElement('button');
-  cancelButton.textContent = 'OK';
-  cancelButton.style.cssText = `
-    background: #4285F4;
-    color: white;
-    border: none;
-    padding: 10px 24px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    direction: ltr;
-  `;
-
-  cancelButton.onmouseover = () => {
-    cancelButton.style.background = '#1a73e8';
-    cancelButton.style.transform = 'translateY(-1px)';
-  };
-  cancelButton.onmouseout = () => {
-    cancelButton.style.background = '#4285F4';
-    cancelButton.style.transform = 'translateY(0)';
-  };
-
-  // Add style for animations
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideIn {
+  
+  const shadow = host.attachShadow({ mode: 'closed' });
+  
+  // Base styles that apply to all popups - completely isolated from website CSS
+  const baseStyles = document.createElement('style');
+  baseStyles.textContent = `
+    :host {
+      all: initial !important;
+      direction: ltr !important;
+    }
+    
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.4;
+      -webkit-font-smoothing: antialiased;
+      direction: ltr;
+    }
+    
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    
+    @keyframes slideUp {
       from { transform: translateY(20px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
+    
     @keyframes gradientShift {
       0% { background-position: 0% 50% }
       50% { background-position: 100% 50% }
       100% { background-position: 0% 50% }
     }
+    
+    .overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      backdrop-filter: blur(4px);
+      animation: fadeIn 0.2s ease;
+      direction: ltr;
+      margin: 0;
+      padding: 0;
+      z-index: 2147483647;
+      isolation: isolate;
+    }
+    
+    .popup-box {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+      width: 90%;
+      max-width: 400px;
+      max-height: 90vh;
+      overflow-y: auto;
+      animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      text-align: center;
+      position: relative;
+      direction: ltr;
+      flex: none;
+      align-self: center;
+      z-index: 2147483647;
+    }
+    
+    .popup-box-small {
+      max-width: 380px;
+      padding: 20px 20px;
+      min-height: auto;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+    
+    .popup-box-large {
+      padding: 28px 28px 24px 28px;
+    }
+    
+    h3 {
+      font-size: 20px;
+      color: #1a1a1a;
+      font-weight: 600;
+      margin: 0 0 8px 0;
+      line-height: 1.3;
+      letter-spacing: -0.3px;
+      text-align: center;
+    }
+    
+    p {
+      font-size: 15px;
+      color: #666;
+      margin: 0;
+      line-height: 1.5;
+      text-align: center;
+    }
+    
+    button {
+      font-family: inherit;
+      cursor: pointer;
+      border: none;
+      outline: none;
+    }
+    
+    .btn-primary {
+      background: #4285F4;
+      color: white;
+      padding: 10px 24px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      transition: all 0.2s ease;
+    }
+    
+    .btn-primary:hover {
+      background: #1a73e8;
+      transform: translateY(-1px);
+    }
+    
+    .btn-google {
+      background: white;
+      color: #3c4043;
+      border: 1px solid #dadce0;
+      padding: 14px 24px;
+      border-radius: 10px;
+      font-size: 1em;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      max-width: 300px;
+      margin: 0 auto;
+      box-shadow: 0 2px 10px rgba(66,133,244,0.10);
+      transition: all 0.15s ease;
+    }
+    
+    .btn-google:hover {
+      background: #f8f9fa;
+      border-color: #d2d3d4;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    
+    .btn-google svg {
+      width: 20px;
+      height: 20px;
+      flex-shrink: 0;
+    }
+    
+    .btn-secondary {
+      background: transparent;
+      color: #5f6368;
+      padding: 14px 24px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.15s ease;
+    }
+    
+    .btn-secondary:hover {
+      background: #f8f9fa;
+      color: #3c4043;
+    }
+    
+    .close-btn {
+      position: absolute;
+      top: 8px;
+      right: 10px;
+      background: transparent;
+      color: #888;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1;
+      padding: 0 4px;
+      transition: color 0.2s;
+    }
+    
+    .close-btn:hover {
+      color: #4285F4;
+    }
+    
+    .icon-container {
+      width: 40px;
+      height: 40px;
+      margin: 0 auto 12px auto;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+    
+    .icon-container img {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+    }
+    
+    .mode-selector {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+    
+    .mode-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      background: white;
+      border: 2px solid transparent;
+      border-radius: 12px;
+      padding: 12px 14px;
+      min-width: 95px;
+      min-height: 90px;
+      cursor: pointer;
+      transition: all 0.2s;
+      box-shadow: 0 2px 12px rgba(66,133,244,0.10);
+    }
+    
+    .mode-btn.selected {
+      background: #4285F4;
+      color: white;
+      box-shadow: 0 6px 24px rgba(66,133,244,0.25);
+      border-color: #4285F4;
+    }
+    
+    .mode-btn.selected img {
+      filter: brightness(0) invert(1);
+    }
+    
+    .mode-btn.selected .mode-label,
+    .mode-btn.selected .mode-desc {
+      color: white;
+    }
+    
+    .mode-btn img {
+      width: 36px;
+      height: 36px;
+      margin-bottom: 8px;
+    }
+    
+    .mode-label {
+      font-weight: 700;
+      font-size: 1em;
+      color: #333;
+      margin-bottom: 4px;
+    }
+    
+    .mode-desc {
+      font-size: 0.85em;
+      opacity: 0.85;
+      color: #333;
+      font-weight: 400;
+    }
+    
+    .mode-section {
+      background: #f6faff;
+      border-radius: 10px;
+      padding: 6px 2px 4px 2px;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 4px rgba(66,133,244,0.03);
+    }
+    
+    .mode-section-label {
+      text-align: center;
+      font-size: 0.9em;
+      color: #4285F4;
+      font-weight: 500;
+      margin-bottom: 2px;
+      opacity: 0.7;
+    }
+    
+    .auto-replace-container {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 8px;
+      gap: 6px;
+    }
+    
+    .auto-replace-container input[type="checkbox"] {
+      margin-right: 4px;
+      transform: scale(1.1);
+      accent-color: #4285F4;
+    }
+    
+    .auto-replace-container label {
+      font-size: 0.9em;
+      color: #4285F4;
+      font-weight: 500;
+      cursor: pointer;
+      user-select: none;
+    }
+    
+    .sign-in-section {
+      text-align: center;
+    }
+    
+    .sign-in-label {
+      font-size: 1.1em;
+      color: #1a1a1a;
+      font-weight: 700;
+      margin-bottom: 10px;
+      letter-spacing: -0.3px;
+    }
+    
+    .button-container {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      width: 100%;
+    }
+    
+    .upgrade-btn {
+      position: relative;
+      padding: 2px;
+      border-radius: 30px;
+      background: linear-gradient(135deg, #8A2BE2 0%, #58CC02 25%, #6200EE 50%, #58CC02 75%, #8A2BE2 100%);
+      background-size: 300% 300%;
+      animation: gradientShift 8s linear infinite;
+      text-decoration: none;
+      cursor: pointer;
+      width: 100%;
+      display: block;
+    }
+    
+    .upgrade-btn span {
+      display: block;
+      background: transparent;
+      color: white;
+      padding: 14px 24px;
+      border-radius: 28px;
+      font-size: 15px;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      text-align: center;
+    }
+    
+    .upgrade-btn:hover span {
+      background: white;
+      color: #6200EE;
+    }
+    
+    .message-text {
+      margin: 0 0 32px 0;
+    }
   `;
-  document.head.appendChild(style);
+  shadow.appendChild(baseStyles);
+  
+  return { host, shadow };
+}
+
+function createNotificationPrompt(message) {
+  const { host, shadow } = createIsolatedPopup();
+  
+  const overlay = document.createElement('div');
+  overlay.className = 'overlay';
+
+  const promptBox = document.createElement('div');
+  promptBox.className = 'popup-box popup-box-small';
+
+  const title = document.createElement('div');
+  title.style.cssText = 'text-align: center; color: #333; margin: 0 0 20px 0; font-size: 16px; line-height: 1.6; font-weight: 400; white-space: pre-line;';
+  title.textContent = message;
+
+  const buttonContainer = document.createElement('div');
+  buttonContainer.style.cssText = 'display: flex; justify-content: center; align-items: center; gap: 12px;';
+
+  const cancelButton = document.createElement('button');
+  cancelButton.className = 'btn-primary';
+  cancelButton.textContent = 'OK';
 
   buttonContainer.appendChild(cancelButton);
   promptBox.appendChild(title);
   promptBox.appendChild(buttonContainer);
   overlay.appendChild(promptBox);
+  shadow.appendChild(overlay);
 
-  return { overlay, cancelButton };
+  return { host, cancelButton };
 }
 
 async function createNotification(message) {
   return new Promise((resolve, reject) => {
-    const { overlay, cancelButton } = createNotificationPrompt(message);
-    document.body.appendChild(overlay);
+    const { host, cancelButton } = createNotificationPrompt(message);
+    document.body.appendChild(host);
 
     cancelButton.onclick = () => {
-      document.body.removeChild(overlay);
+      document.body.removeChild(host);
       resolve(null);
     };
   });
@@ -1508,121 +1894,35 @@ async function createNotification(message) {
 
 // Show login prompt to user
 function showLoginPrompt() {
+  const { host, shadow } = createIsolatedPopup();
+  
   const overlay = document.createElement('div');
-  overlay.style.cssText = `
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 10000;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-    backdrop-filter: blur(4px);
-    direction: ltr;
-    animation: fadeIn 0.2s ease;
-  `;
+  overlay.className = 'overlay';
 
   const promptBox = document.createElement('div');
-  promptBox.style.cssText = `
-    background: white;
-    padding: 48px 40px 40px 40px;
-    border-radius: 12px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
-    width: 90%;
-    max-width: 440px;
-    box-sizing: border-box;
-    animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-    direction: ltr;
-    text-align: center;
-    position: relative;
-  `;
+  promptBox.className = 'popup-box popup-box-large';
+
+  // Close button
+  const closeButton = document.createElement('button');
+  closeButton.className = 'close-btn';
+  closeButton.innerHTML = '&times;';
+  closeButton.setAttribute('aria-label', 'Close');
+  closeButton.onclick = () => {
+    host.remove();
+    isLoginPromptShown = false;
+  };
 
   // Logo/Icon at the top
   const iconContainer = document.createElement('div');
-  iconContainer.style.cssText = `
-    width: 48px;
-    height: 48px;
-    margin: 0 auto 20px auto;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  `;
+  iconContainer.className = 'icon-container';
   const icon = document.createElement('img');
   icon.src = chrome.runtime.getURL('icons/icon128.png');
-  icon.style.cssText = `
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-  `;
   iconContainer.appendChild(icon);
 
   const title = document.createElement('h3');
   title.textContent = 'Welcome to Just News';
-  title.style.cssText = `
-    text-align: center;
-    font-size: 24px;
-    color: #1a1a1a;
-    font-weight: 600;
-    margin: 0 0 12px 0;
-    line-height: 1.3;
-    letter-spacing: -0.3px;
-  `;
 
-  // Removed the 'Sign in to start removing clickbait' message for a cleaner UI
-
-
-  // --- Mode Selector (Robot/Clean) ---
-  const modeSelectorContainer = document.createElement('div');
-  modeSelectorContainer.className = 'jn-mode-selector';
-  modeSelectorContainer.style.cssText = `
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    gap: 16px;
-    margin-bottom: 14px;
-    margin-top: 0;
-    transform: scale(1);
-    opacity: 1;
-    filter: none;
-    transition: all 0.2s;
-  `;
-
-  // Inject CSS for .jn-mode-btn and .jn-mode-btn.selected
-  if (!document.getElementById('jn-mode-btn-style')) {
-    const style = document.createElement('style');
-    style.id = 'jn-mode-btn-style';
-    style.textContent = `
-      .jn-mode-btn {
-        display: flex; flex-direction: column; align-items: center; justify-content: center;
-        background: white; border: 2px solid transparent; border-radius: 14px; padding: 18px 18px 14px 18px; min-width: 110px; min-height: 110px; cursor: pointer; transition: all 0.2s; box-shadow: 0 2px 12px rgba(66,133,244,0.10);
-        margin: 0 6px;
-      }
-      .jn-mode-btn.selected {
-        background: #4285F4 !important; color: white !important; box-shadow: 0 6px 24px rgba(66,133,244,0.25) !important; border-color: #4285F4 !important;
-      }
-      .jn-mode-btn.selected img { filter: brightness(0) invert(1) !important; }
-      .jn-mode-btn.selected span { color: white !important; }
-      .jn-mode-btn img { width:48px; height:48px; margin-bottom:12px; }
-      .jn-mode-btn span { font-weight:700; font-size:1.18em; color:#333; margin-bottom: 4px; }
-      .jn-mode-btn .jn-desc { font-size:1em; opacity:0.85; color:#333; font-weight:400; margin-bottom:0; text-align:center; }
-      .jn-mode-selector { gap: 16px !important; }
-      @media (max-width: 600px) {
-        .jn-mode-btn { min-width: 80px; min-height: 80px; padding: 10px 6px 8px 6px; }
-        .jn-mode-btn img { width:32px; height:32px; margin-bottom:6px; }
-        .jn-mode-btn span { font-size:1em; }
-        .jn-mode-btn .jn-desc { font-size:0.85em; }
-      }
-    `;
-    document.head.appendChild(style);
-  }
-
-  // Mode configs (same as options.js)
+  // Mode configs
   const characterConfigs = {
     robot: {
       systemPrompt: "Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.",
@@ -1635,24 +1935,27 @@ function showLoginPrompt() {
   };
   let currentMode = 'robot';
 
+  // Mode selector container
+  const modeSelectorContainer = document.createElement('div');
+  modeSelectorContainer.className = 'mode-selector';
+
   // Mode button factory
   function createModeButton(mode, iconUrl, label, desc) {
     const btn = document.createElement('div');
-    btn.className = 'jn-mode-btn' + (mode === currentMode ? ' selected' : '');
+    btn.className = 'mode-btn' + (mode === currentMode ? ' selected' : '');
 
-    // Create image element and set src using chrome.runtime.getURL
     const img = document.createElement('img');
     img.src = iconUrl;
     img.alt = label;
 
-    // Create label and description
     const nameSpan = document.createElement('span');
+    nameSpan.className = 'mode-label';
     nameSpan.textContent = label;
-    const descSpan = document.createElement('span');
-    descSpan.textContent = desc;
-    descSpan.className = 'jn-desc';
 
-    // Append children
+    const descSpan = document.createElement('span');
+    descSpan.className = 'mode-desc';
+    descSpan.textContent = desc;
+
     btn.appendChild(img);
     btn.appendChild(nameSpan);
     btn.appendChild(descSpan);
@@ -1660,10 +1963,8 @@ function showLoginPrompt() {
     btn.onclick = () => {
       if (currentMode === mode) return;
       currentMode = mode;
-      // Update UI selection
       Array.from(modeSelectorContainer.children).forEach(child => child.classList.remove('selected'));
       btn.classList.add('selected');
-      // Save prompts to storage
       chrome.storage.sync.set({
         characterMode: mode,
         systemPrompt: characterConfigs[mode].systemPrompt,
@@ -1673,114 +1974,64 @@ function showLoginPrompt() {
     return btn;
   }
 
-  // Add Robot and Clean mode buttons
-  modeSelectorContainer.appendChild(createModeButton('robot', chrome.runtime.getURL('icons2/robot.png'), 'Robot', 'Factual & objective'));
-  modeSelectorContainer.appendChild(createModeButton('clean', chrome.runtime.getURL('icons2/clean.png'), 'Clean', 'Family-friendly'));
-  // --- End Mode Selector ---
+  // Add mode buttons
+  modeSelectorContainer.appendChild(createModeButton('robot', chrome.runtime.getURL('icons2/robot.png'), 'Robot', 'Factual'));
+  modeSelectorContainer.appendChild(createModeButton('clean', chrome.runtime.getURL('icons2/clean.png'), 'Clean', 'Ethical'));
 
+  // Mode section wrapper
+  const modeSection = document.createElement('div');
+  modeSection.className = 'mode-section';
+  const modeLabel = document.createElement('div');
+  modeLabel.className = 'mode-section-label';
+  modeLabel.textContent = 'Choose your mode:';
+  modeSection.appendChild(modeLabel);
+  modeSection.appendChild(modeSelectorContainer);
 
-  // --- Auto Replace Headlines Checkbox ---
+  // Auto Replace Headlines Checkbox
   const autoReplaceContainer = document.createElement('div');
-  autoReplaceContainer.style.cssText = 'display:flex;align-items:center;justify-content:center;margin-bottom:10px;gap:8px;';
+  autoReplaceContainer.className = 'auto-replace-container';
   const autoReplaceCheckbox = document.createElement('input');
   autoReplaceCheckbox.type = 'checkbox';
   autoReplaceCheckbox.id = 'jn-auto-replace-checkbox';
   autoReplaceCheckbox.checked = true;
-  autoReplaceCheckbox.style.cssText = 'margin-right:6px;transform:scale(1.2);accent-color:#4285F4;';
   const autoReplaceLabel = document.createElement('label');
   autoReplaceLabel.htmlFor = 'jn-auto-replace-checkbox';
-  autoReplaceLabel.textContent = 'Automatically replace headlines on page load';
-  autoReplaceLabel.style.cssText = 'font-size:1em;color:#4285F4;font-weight:500;cursor:pointer;user-select:none;';
+  autoReplaceLabel.textContent = 'Auto-replace on page load';
   autoReplaceContainer.appendChild(autoReplaceCheckbox);
   autoReplaceContainer.appendChild(autoReplaceLabel);
 
-  // Try to load previous value from storage
+  // Load previous auto-replace setting
   chrome.storage.sync.get(['autoReplaceHeadlines'], (data) => {
     if (typeof data.autoReplaceHeadlines === 'boolean') {
       autoReplaceCheckbox.checked = data.autoReplaceHeadlines;
     }
   });
 
+  // Sign in section
+  const signInSection = document.createElement('div');
+  signInSection.className = 'sign-in-section';
+
+  // Button container
   const buttonContainer = document.createElement('div');
-  buttonContainer.style.cssText = `
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    width: 100%;
-  `;
+  buttonContainer.className = 'button-container';
 
+  // Google login button
   const loginButton = document.createElement('button');
+  loginButton.className = 'btn-google';
   loginButton.innerHTML = `
-    <span style="display:flex;align-items:center;gap:7px;justify-content:center;">
-      <svg style="width: 20px; height: 20px; flex-shrink: 0;" viewBox="0 0 48 48">
-        <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-        <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-        <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-        <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-        <path fill="none" d="M0 0h48v48H0z"/>
-      </svg>
-      <span style="font-size:1em;">Continue with Google</span>
-    </span>
+    <svg viewBox="0 0 48 48">
+      <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+      <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+      <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+      <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+      <path fill="none" d="M0 0h48v48H0z"/>
+    </svg>
+    <span>Continue with Google</span>
   `;
-  loginButton.style.cssText = `
-    background: white;
-    color: #3c4043;
-    border: 1px solid #dadce0;
-    padding: 14px 24px;
-    border-radius: 8px;
-    font-size: 15px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-    font-family: inherit;
-  `;
-
-  loginButton.onmouseover = () => {
-    loginButton.style.background = '#f8f9fa';
-    loginButton.style.borderColor = '#d2d3d4';
-    loginButton.style.boxShadow = '0 1px 3px rgba(0, 0, 0, 0.1)';
-  };
-  loginButton.onmouseout = () => {
-    loginButton.style.background = 'white';
-    loginButton.style.borderColor = '#dadce0';
-    loginButton.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
-  };
-
-  // Add X close button in the top right corner
-  const closeButton = document.createElement('button');
-  closeButton.innerHTML = '&times;';
-  closeButton.setAttribute('aria-label', 'Close');
-  closeButton.style.cssText = `
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    background: transparent;
-    border: none;
-    color: #888;
-    font-size: 2.1rem;
-    font-weight: 700;
-    cursor: pointer;
-    z-index: 10;
-    line-height: 1;
-    padding: 0 6px;
-    transition: color 0.2s;
-  `;
-  closeButton.onmouseover = () => { closeButton.style.color = '#4285F4'; };
-  closeButton.onmouseout = () => { closeButton.style.color = '#888'; };
-  closeButton.onclick = () => {
-    overlay.remove();
-    isLoginPromptShown = false;
-  };
 
   loginButton.addEventListener('click', async () => {
     loginButton.disabled = true;
     loginButton.textContent = 'Signing in...';
-    // Save current mode prompts and autoReplaceHeadlines before login
     chrome.storage.sync.set({
       characterMode: currentMode,
       systemPrompt: characterConfigs[currentMode].systemPrompt,
@@ -1790,254 +2041,81 @@ function showLoginPrompt() {
       try {
         const response = await chrome.runtime.sendMessage({ action: 'login' });
         if (response.success) {
-          overlay.remove();
-          isLoginPromptShown = false; // Reset flag on successful login
-          // Trigger headline summarization
+          host.remove();
+          isLoginPromptShown = false;
           summarizeHeadlines();
         } else {
           await createNotification('Login failed: ' + response.error);
-          overlay.remove();
-          isLoginPromptShown = false; // Reset flag on failure
+          host.remove();
+          isLoginPromptShown = false;
         }
       } catch (error) {
         await createNotification('Login error: ' + error.message);
-        overlay.remove();
-        isLoginPromptShown = false; // Reset flag on error
+        host.remove();
+        isLoginPromptShown = false;
       }
     });
   });
 
-  // Insert auto replace checkbox above login button
+  // Assemble the UI
   buttonContainer.appendChild(autoReplaceContainer);
   buttonContainer.appendChild(loginButton);
-  // Insert close button in the corner
+  signInSection.appendChild(buttonContainer);
+
   promptBox.appendChild(closeButton);
   promptBox.appendChild(iconContainer);
   promptBox.appendChild(title);
-  // Removed message for a cleaner UI
-
-  // Removed the stepper (1>2 icon) for a cleaner UI
-
-  // Highlight mode selection area (now smaller and less prominent)
-  const modeSection = document.createElement('div');
-  modeSection.style.cssText = 'background:#f6faff;border-radius:10px;padding:8px 2px 4px 2px;margin-bottom:10px;box-shadow:0 1px 4px rgba(66,133,244,0.03);';
-  const modeLabel = document.createElement('div');
-  modeLabel.textContent = 'Choose your mode:';
-  modeLabel.style.cssText = 'text-align:center;font-size:0.98em;color:#4285F4;font-weight:500;margin-bottom:4px;opacity:0.7;';
-  modeSection.appendChild(modeLabel);
-  modeSection.appendChild(modeSelectorContainer);
   promptBox.appendChild(modeSection);
-
-  // Step 2: Sign in (now more prominent)
-  const signInSection = document.createElement('div');
-  signInSection.style.cssText = 'text-align:center;margin-bottom:0;margin-top:0;';
-  const signInLabel = document.createElement('div');
-  signInLabel.textContent = 'Sign in with Google';
-  signInLabel.style.cssText = 'font-size:1.22em;color:#1a1a1a;font-weight:800;margin-bottom:16px;letter-spacing:-0.5px;text-shadow:0 2px 8px rgba(66,133,244,0.08);';
-  signInSection.appendChild(signInLabel);
-  // Make login button larger and bolder
-  loginButton.style.padding = '20px 32px';
-  loginButton.style.fontSize = '1.18em';
-  loginButton.style.fontWeight = '700';
-  loginButton.style.borderRadius = '12px';
-  loginButton.style.boxShadow = '0 4px 16px rgba(66,133,244,0.10)';
-  loginButton.style.margin = '0 auto 0 auto';
-  loginButton.style.maxWidth = '340px';
-  loginButton.style.display = 'flex';
-  loginButton.style.alignItems = 'center';
-  loginButton.style.justifyContent = 'center';
-  loginButton.style.gap = '12px';
-  signInSection.appendChild(buttonContainer);
   promptBox.appendChild(signInSection);
   overlay.appendChild(promptBox);
-  document.body.appendChild(overlay);
+  shadow.appendChild(overlay);
+  document.body.appendChild(host);
 }
 
 // Show premium upgrade notification with styled "Maybe later" button
 function createPremiumNotification(message) {
   return new Promise((resolve) => {
+    const { host, shadow } = createIsolatedPopup();
+    
     const overlay = document.createElement('div');
-    overlay.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0, 0, 0, 0.6);
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 10000;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-      backdrop-filter: blur(4px);
-      direction: ltr;
-      animation: fadeIn 0.2s ease;
-    `;
+    overlay.className = 'overlay';
 
     const notificationBox = document.createElement('div');
-    notificationBox.style.cssText = `
-      background: white;
-      padding: 48px 40px 40px 40px;
-      border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
-      width: 90%;
-      max-width: 440px;
-      box-sizing: border-box;
-      animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-      direction: ltr;
-      text-align: center;
-      position: relative;
-    `;
+    notificationBox.className = 'popup-box popup-box-large';
 
     // Icon at the top
     const iconContainer = document.createElement('div');
-    iconContainer.style.cssText = `
-      width: 48px;
-      height: 48px;
-      margin: 0 auto 20px auto;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    `;
+    iconContainer.className = 'icon-container';
     const icon = document.createElement('img');
     icon.src = chrome.runtime.getURL('icons/icon128.png');
-    icon.style.cssText = `
-      width: 48px;
-      height: 48px;
-      border-radius: 12px;
-    `;
     iconContainer.appendChild(icon);
 
     const title = document.createElement('h3');
     title.textContent = 'Daily Limit Reached';
-    title.style.cssText = `
-      text-align: center;
-      font-size: 24px;
-      color: #1a1a1a;
-      font-weight: 600;
-      margin: 0 0 12px 0;
-      line-height: 1.3;
-      letter-spacing: -0.3px;
-    `;
 
     const messageText = document.createElement('p');
+    messageText.className = 'message-text';
     messageText.textContent = message;
-    messageText.style.cssText = `
-      text-align: center;
-      font-size: 15px;
-      color: #666;
-      margin: 0 0 32px 0;
-      line-height: 1.5;
-      font-weight: 400;
-    `;
 
     const buttonContainer = document.createElement('div');
-    buttonContainer.style.cssText = `
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      width: 100%;
-    `;
+    buttonContainer.className = 'button-container';
 
     // Upgrade to Premium button with gradient animation
     const upgradeButton = document.createElement('a');
     upgradeButton.href = 'https://tsurdan.github.io/Just-News/premium.html';
     upgradeButton.target = '_blank';
-    upgradeButton.style.cssText = `
-      position: relative;
-      padding: 2px;
-      border-radius: 30px;
-      background: linear-gradient(135deg, 
-        #8A2BE2 0%,
-        #58CC02 25%,
-        #6200EE 50%,
-        #58CC02 75%,
-        #8A2BE2 100%
-      );
-      background-size: 300% 300%;
-      animation: gradientShift 8s linear infinite;
-      text-decoration: none;
-      cursor: pointer;
-      direction: ltr;
-      width: 100%;
-      box-sizing: border-box;
-    `;
+    upgradeButton.className = 'upgrade-btn';
 
     const upgradeSpan = document.createElement('span');
     upgradeSpan.textContent = 'Upgrade to Premium';
-    upgradeSpan.style.cssText = `
-      display: block;
-      background: transparent;
-      color: white;
-      padding: 14px 24px;
-      border-radius: 28px;
-      font-size: 15px;
-      font-weight: 600;
-      transition: all 0.3s ease;
-      direction: ltr;
-      text-align: center;
-    `;
-
     upgradeButton.appendChild(upgradeSpan);
-    upgradeButton.onmouseover = () => {
-      upgradeSpan.style.background = 'white';
-      upgradeSpan.style.color = '#6200EE';
-    };
-    upgradeButton.onmouseout = () => {
-      upgradeSpan.style.background = 'transparent';
-      upgradeSpan.style.color = 'white';
-    };
-
-    // Add gradient animation style if not already added
-    if (!document.getElementById('premium-gradient-animation')) {
-      const style = document.createElement('style');
-      style.id = 'premium-gradient-animation';
-      style.textContent = `
-        @keyframes gradientShift {
-          0% { background-position: 0% 50% }
-          50% { background-position: 100% 50% }
-          100% { background-position: 0% 50% }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        @keyframes slideUp {
-          from { transform: translateY(20px); opacity: 0; }
-          to { transform: translateY(0); opacity: 1; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
 
     const maybeLaterButton = document.createElement('button');
+    maybeLaterButton.className = 'btn-secondary';
     maybeLaterButton.textContent = 'Maybe later';
-    maybeLaterButton.style.cssText = `
-      background: transparent;
-      color: #5f6368;
-      border: none;
-      padding: 14px 24px;
-      border-radius: 8px;
-      font-size: 14px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: all 0.15s ease;
-      font-family: inherit;
-    `;
-
-    maybeLaterButton.onmouseover = () => {
-      maybeLaterButton.style.background = '#f8f9fa';
-      maybeLaterButton.style.color = '#3c4043';
-    };
-    maybeLaterButton.onmouseout = () => {
-      maybeLaterButton.style.background = 'transparent';
-      maybeLaterButton.style.color = '#5f6368';
-    };
 
     maybeLaterButton.addEventListener('click', () => {
-      overlay.remove();
+      host.remove();
       resolve();
     });
 
@@ -2048,7 +2126,8 @@ function createPremiumNotification(message) {
     notificationBox.appendChild(messageText);
     notificationBox.appendChild(buttonContainer);
     overlay.appendChild(notificationBox);
-    document.body.appendChild(overlay);
+    shadow.appendChild(overlay);
+    document.body.appendChild(host);
   });
 }
 
