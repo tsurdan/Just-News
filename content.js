@@ -1,7 +1,9 @@
 // TODO: Optimize clean mode
-// TODO: Support compatibility to the back, premium from local storage, in server
+// TODO: In Article Summary?
 // TODO: Make the working with server generic to other future extensions too
 // TODO: Legal: update privacy policy and make legal research
+// TODO: Update firefox code also
+// TODO: Update texts
 // TODO: Prod
 
 // Cache configuration

@@ -351,4 +351,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return;
   }
 });
+const REQUIRED_TOKEN = "e23de-32dd3-d2fg3fw-f34f3w"
 
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (message.type === "openOptions" && message.token == REQUIRED_TOKEN) {
+        setTimeout(() => {
+          chrome.runtime.openOptionsPage(() => {
+            console.log('Options page opened after premium unlock');
+          });
+        }, 10000);
+    return true;
+  }
+});
