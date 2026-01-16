@@ -1,4 +1,5 @@
 // TODO: Fix too many api requests even without activity
+// TODO: Chang model to llama-3.1-8b-instant and test
 // TODO: Check upgrade-to-premium spamming
 // TODO: Optimize clean mode
 // TODO: In Article Summary?
