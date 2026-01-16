@@ -1,5 +1,10 @@
+// TODO: Fix too many api requests even without activity
+// TODO: Check upgrade-to-premium spamming
 // TODO: Optimize clean mode
 // TODO: In Article Summary?
+// TODO: compatibility to past in-local-storage premium users
+// TODO: Maybe cache mechanism in server also?
+// TODO: More usage limits on free users
 // TODO: Make the working with server generic to other future extensions too
 // TODO: Legal: update privacy policy and make legal research
 // TODO: Update firefox code also
