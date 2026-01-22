@@ -1,16 +1,12 @@
-// TODO: Fix too many api requests even without activity
-// TODO: Chang model to llama-3.1-8b-instant and test
-// TODO: Check upgrade-to-premium spamming
-// TODO: Optimize clean mode
-// TODO: In Article Summary?
-// TODO: compatibility to past in-local-storage premium users
-// TODO: Maybe cache mechanism in server also?
+// TODO: Chang model to llama-3.1-8b-instant and test (cheaper than meta-llama/llama-4-scout-17b-16e-instruct)
 // TODO: More usage limits on free users
-// TODO: Make the working with server generic to other future extensions too
+// TODO: Check upgrade-to-premium spamming
 // TODO: Legal: update privacy policy and make legal research
-// TODO: Update firefox code also
 // TODO: Update texts
-// TODO: Prod
+// TODO: Update firefox code also
+// TODO: add many news sites
+// TODO: Optimize clean mode
+// TODO: Prod (worker, groq, lemonsqueezy, extension)
 
 // Cache configuration
 const CACHE_PREFIX = 'justnews_cache_';
@@ -28,6 +24,9 @@ let userSelectedElement = null; // Store user's selected headline element
 let lastScrollY = 0; // Track scroll position for dynamic processing
 let scrollProcessingTimeout = null; // Debounce scroll processing
 let isAutomaticProcessing = false; // Flag to suppress notifications during automatic scroll processing
+let rateLimitedUntil = 0; // Timestamp when rate limit expires (0 = not rate limited)
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000; // 1 minute cooldown after rate limit
+const DAILY_RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000; // 1 hour cooldown for daily limits
 
 // ============= CACHE UTILITIES =============
 
@@ -345,8 +344,11 @@ function setupScrollListener() {
   let isProcessing = false;
 
   window.addEventListener('scroll', () => {
-    // Check if auto-replace is still enabled
+    // Check if auto-replace is still enabled and not rate limited
     if (!autoReplaceHeadlines || isProcessing) return;
+    
+    // Skip if currently rate limited
+    if (Date.now() < rateLimitedUntil) return;
 
     const currentScrollY = window.scrollY;
     const scrollDifference = Math.abs(currentScrollY - lastScrollY);
@@ -369,40 +371,39 @@ function setupScrollListener() {
       }, 500); // Wait 500ms after scrolling stops
     }
   }, { passive: true });
-
-  // Also handle dynamically added content
-  const mutationObserver = new MutationObserver(() => {
-    if (!autoReplaceHeadlines || isProcessing) return;
-    
-    clearTimeout(scrollProcessingTimeout);
-    scrollProcessingTimeout = setTimeout(async () => {
-      isProcessing = true;
-      isAutomaticProcessing = true; // Enable silent mode
-      counter = 0;
-      await summarizeHeadlines();
-      isAutomaticProcessing = false; // Disable silent mode
-      isProcessing = false;
-    }, 1000); // Wait longer for DOM changes to settle
-  });
-
-  mutationObserver.observe(document.body, {
-    childList: true,
-    subtree: true
-  });
 }
 
 async function initializeContentScript() {
   if (isInitialized) return;
 
-  // Load autoReplaceHeadlines setting from storage (default true)
+  // Check if user is authenticated first
+  const authResponse = await chrome.runtime.sendMessage({ action: 'checkAuth' });
+  const isAuthenticated = authResponse?.authenticated;
+  
+  // If not authenticated, prompt login after a short delay
+  if (!isAuthenticated) {
+    setTimeout(() => {
+      if (!isLoginPromptShown) {
+        showLoginPrompt();
+      }
+    }, 1500);
+    // Still continue to set up the rest of the content script
+  }
+
+  // Check premium status first, then load autoReplaceHeadlines setting
+  const hasPremium = await isPremiumUser();
+  
   chrome.storage.sync.get(['autoReplaceHeadlines'], (data) => {
-    if (typeof data.autoReplaceHeadlines === 'boolean') {
+    // Auto-replace is only available for premium users
+    if (!hasPremium) {
+      autoReplaceHeadlines = false;
+    } else if (typeof data.autoReplaceHeadlines === 'boolean') {
       autoReplaceHeadlines = data.autoReplaceHeadlines;
     } else {
-      autoReplaceHeadlines = true;
+      autoReplaceHeadlines = false; // Default false for premium users
     }
 
-    // If enabled, run headline replacement automatically
+    // If enabled (premium only), run headline replacement automatically
     if (autoReplaceHeadlines) {
       // Wait for DOM to be ready and content to render
       if (document.readyState === 'loading') {
@@ -422,6 +423,9 @@ async function initializeContentScript() {
       }
       // Set up scroll listener for dynamic headline processing
       setupScrollListener();
+    } else if (isAuthenticated) {
+      // User is logged in but auto-replace is disabled - remind them about the extension (once per day)
+      checkAndShowReminderToast();
     }
   });
 
@@ -432,6 +436,8 @@ async function initializeContentScript() {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'summarizeHeadlines') {
       counter = 0;
+      // Reset rate limit flag on manual action (user explicitly wants to try)
+      rateLimitedUntil = 0;
       // Capture user's selected element before processing
       const selection = window.getSelection();
       if (selection && selection.rangeCount > 0) {
@@ -450,6 +456,10 @@ async function initializeContentScript() {
       // Show login prompt
       showLoginPrompt();
       sendResponse({status: 'login prompt shown'});
+    } else if (request.action === 'showPremiumNotification') {
+      // Show premium upgrade notification
+      createPremiumNotification(request.message);
+      sendResponse({status: 'premium notification shown'});
     }
     return true;
   });
@@ -554,7 +564,8 @@ async function summarizeArticleHeadline() {
     return;
   }
   
-  const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "mode": mode};
+  const articleUrl = window.location.href;
+  const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "mode": mode, "isInArticle": true, "url": articleUrl};
   
   // Extract article headline and content
   const headlineData = extractArticleHeadline();
@@ -579,7 +590,6 @@ async function summarizeArticleHeadline() {
   
   const sourceHeadline = headlineData.text;
   const headlineElement = headlineData.element;
-  const articleUrl = window.location.href;
   
   // Check premium status
   const hasPremium = await isPremiumUser();
@@ -680,7 +690,7 @@ async function summarizeHomepageHeadlines(isArticle = false) {
       await createNotification('Error loading settings. Please try again.');
     }
   }
-  const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "mode": mode}; 
+  const apiOptions = {"customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "mode": mode, "isInArticle": false}; 
 
   const limit = 20; // Maximum headlines per click
   let firstHeadlineChanged = false;
@@ -863,11 +873,6 @@ async function summarizeHomepageHeadlines(isArticle = false) {
   const succes = results.filter(result => result.status === 'fulfilled');  
   const errors = results.filter(result => result.status === 'rejected');
   
-  // Skip notifications during automatic processing
-  if (isAutomaticProcessing) {
-    return;
-  }
-  
   if (succes.length === 0 && errors.length > 0) {
     let minRetryAfter = null;
     let hasRateLimit = false;
@@ -894,6 +899,20 @@ async function summarizeHomepageHeadlines(isArticle = false) {
     });
     
     if (hasRateLimit) {
+      // Set rate limit cooldown to prevent automatic processing spam
+      if (dailyQuotaExceeded || rateLimitMessage.includes('Daily limit') || rateLimitMessage.includes('retry tomorrow')) {
+        rateLimitedUntil = Date.now() + DAILY_RATE_LIMIT_COOLDOWN_MS;
+        console.log('Daily rate limit hit, pausing automatic processing for 1 hour');
+      } else {
+        rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+        console.log('Rate limit hit, pausing automatic processing for 1 minute');
+      }
+      
+      // Skip notifications during automatic processing
+      if (isAutomaticProcessing) {
+        return;
+      }
+      
       if (dailyQuotaExceeded) {
         await createPremiumNotification('Daily limit exceeded. Please upgrade to premium for more usage.');
       } else {
@@ -1374,7 +1393,7 @@ async function fetchSummary(sourceHeadline, url, options) {
     summary = await summarizeContnet(
       sourceHeadline,
       content,
-      options
+      { ...options, url }
     );
   } catch (error) {
     throw new Error(error.message);
@@ -1434,7 +1453,7 @@ async function fetchContent(url) {
 }
 
 async function summarizeContnet(sourceHeadline, content, options) {
-  const { customPrompt, systemPrompt, preferedLang, mode } = options;
+  const { customPrompt, systemPrompt, preferedLang, mode, isInArticle, url } = options;
   
   const response = await chrome.runtime.sendMessage({
     action: 'AIcall',
@@ -1443,7 +1462,9 @@ async function summarizeContnet(sourceHeadline, content, options) {
     prompt: customPrompt,
     systemPrompt,
     preferedLang,
-    mode
+    mode,
+    isInArticle: isInArticle !== undefined ? isInArticle : false,
+    url: url || ''
   });
   if (!response || response?.error || !response.summary) {
     const errorMsg = response?.error || 'Unknown error';
@@ -1859,6 +1880,115 @@ function createIsolatedPopup() {
   return { host, shadow };
 }
 
+// Check if we should show the reminder toast (once per day)
+async function checkAndShowReminderToast() {
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  
+  try {
+    const { lastReminderToastShown } = await chrome.storage.local.get('lastReminderToastShown');
+    const now = Date.now();
+    
+    // If never shown or more than 24 hours ago, show it
+    if (!lastReminderToastShown || (now - lastReminderToastShown) > ONE_DAY_MS) {
+      // Update the timestamp
+      await chrome.storage.local.set({ lastReminderToastShown: now });
+      // Show the toast
+      showReminderToast();
+    }
+  } catch (error) {
+    // If there's an error, just show the toast to be safe
+    showReminderToast();
+  }
+}
+
+// Show a small, non-intrusive toast reminder for logged-in users
+function showReminderToast() {
+  // Create host element for shadow DOM isolation
+  const host = document.createElement('div');
+  host.className = 'just-news-toast-host';
+  host.style.cssText = `
+    position: fixed !important;
+    top: 4px !important;
+    right: 20px !important;
+    z-index: 2147483646 !important;
+    pointer-events: auto !important;
+  `;
+  
+  const shadow = host.attachShadow({ mode: 'closed' });
+  
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: white;
+    color: #333;
+    padding: 12px 16px;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: all 0.3s ease;
+    border-left: 4px solid #4285F4;
+    max-width: 300px;
+  `;
+  
+  const icon = document.createElement('img');
+  icon.src = chrome.runtime.getURL('icons/icon48.png');
+  icon.style.cssText = 'width: 24px; height: 24px; border-radius: 4px;';
+  
+  const text = document.createElement('span');
+  text.textContent = 'Click the Just News icon to transform headlines';
+  text.style.cssText = 'flex: 1; line-height: 1.4;';
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '&times;';
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 0 0 8px;
+    line-height: 1;
+  `;
+  closeBtn.onmouseover = () => closeBtn.style.color = '#666';
+  closeBtn.onmouseout = () => closeBtn.style.color = '#999';
+  
+  toast.appendChild(icon);
+  toast.appendChild(text);
+  toast.appendChild(closeBtn);
+  shadow.appendChild(toast);
+  document.body.appendChild(host);
+  
+  // Animate in
+  setTimeout(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  }, 100);
+  
+  // Auto-hide after 6 seconds
+  const autoHideTimeout = setTimeout(() => {
+    hideToast();
+  }, 6000);
+  
+  // Close button handler
+  closeBtn.onclick = () => {
+    clearTimeout(autoHideTimeout);
+    hideToast();
+  };
+  
+  function hideToast() {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-20px)';
+    setTimeout(() => {
+      host.remove();
+    }, 300);
+  }
+}
+
 function createNotificationPrompt(message) {
   const { host, shadow } = createIsolatedPopup();
   
@@ -1995,25 +2125,7 @@ function showLoginPrompt() {
   modeSection.appendChild(modeLabel);
   modeSection.appendChild(modeSelectorContainer);
 
-  // Auto Replace Headlines Checkbox
-  const autoReplaceContainer = document.createElement('div');
-  autoReplaceContainer.className = 'auto-replace-container';
-  const autoReplaceCheckbox = document.createElement('input');
-  autoReplaceCheckbox.type = 'checkbox';
-  autoReplaceCheckbox.id = 'jn-auto-replace-checkbox';
-  autoReplaceCheckbox.checked = true;
-  const autoReplaceLabel = document.createElement('label');
-  autoReplaceLabel.htmlFor = 'jn-auto-replace-checkbox';
-  autoReplaceLabel.textContent = 'Auto-replace on page load';
-  autoReplaceContainer.appendChild(autoReplaceCheckbox);
-  autoReplaceContainer.appendChild(autoReplaceLabel);
 
-  // Load previous auto-replace setting
-  chrome.storage.sync.get(['autoReplaceHeadlines'], (data) => {
-    if (typeof data.autoReplaceHeadlines === 'boolean') {
-      autoReplaceCheckbox.checked = data.autoReplaceHeadlines;
-    }
-  });
 
   // Sign in section
   const signInSection = document.createElement('div');
@@ -2043,8 +2155,7 @@ function showLoginPrompt() {
     chrome.storage.sync.set({
       characterMode: currentMode,
       systemPrompt: characterConfigs[currentMode].systemPrompt,
-      customPrompt: characterConfigs[currentMode].userPrompt,
-      autoReplaceHeadlines: autoReplaceCheckbox.checked
+      customPrompt: characterConfigs[currentMode].userPrompt
     }, async () => {
       try {
         const response = await chrome.runtime.sendMessage({ action: 'login' });
@@ -2066,7 +2177,6 @@ function showLoginPrompt() {
   });
 
   // Assemble the UI
-  buttonContainer.appendChild(autoReplaceContainer);
   buttonContainer.appendChild(loginButton);
   signInSection.appendChild(buttonContainer);
 

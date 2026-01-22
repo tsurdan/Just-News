@@ -125,7 +125,7 @@ async function callProxy(workerUrl, groqPayload) {
     headers: {
       'Content-Type': 'application/json',
       'Authorization': 'Bearer ' + (access_jwt || ''),
-      'X-JustNews-Key': "363bce11-3b8e-4e36-ae08-11d332dc8e23"
+      'X-Extension-Id': "363bce11-3b8e-4e36-ae08-11d332dc8e23"
     },
     body: JSON.stringify(groqPayload)
   });
@@ -190,11 +190,31 @@ chrome.runtime.onInstalled.addListener(() => {
 
 chrome.contextMenus.onClicked.addListener((info, tab) => {
   if (info.menuItemId === 'toggleAutoReplace') {
-    chrome.storage.sync.get(['autoReplaceHeadlines'], (data) => {
-      const current = (typeof data.autoReplaceHeadlines === 'boolean') ? data.autoReplaceHeadlines : true;
-      const newValue = !current;
-      chrome.storage.sync.set({ autoReplaceHeadlines: newValue }, () => {
-        console.log('Auto Headline Replacement set to', newValue);
+    // Check if user has premium before allowing toggle
+    chrome.storage.local.get(['access_jwt'], (localData) => {
+      let isPremium = false;
+      if (localData.access_jwt) {
+        try {
+          const payload = localData.access_jwt.split('.')[1];
+          const decoded = JSON.parse(atob(payload.replace(/-/g, '+').replace(/_/g, '/')));
+          isPremium = !!decoded.premium;
+        } catch (e) {
+          isPremium = false;
+        }
+      }
+      
+      if (!isPremium) {
+        // Send message to content script to show premium notification
+        chrome.tabs.sendMessage(tab.id, { action: 'showPremiumNotification', message: 'Auto-replace on page load is a premium feature. Upgrade to enable automatic headline replacement!' });
+        return;
+      }
+      
+      chrome.storage.sync.get(['autoReplaceHeadlines'], (data) => {
+        const current = (typeof data.autoReplaceHeadlines === 'boolean') ? data.autoReplaceHeadlines : true;
+        const newValue = !current;
+        chrome.storage.sync.set({ autoReplaceHeadlines: newValue }, () => {
+          console.log('Auto Headline Replacement set to', newValue);
+        });
       });
     });
   }
@@ -205,6 +225,66 @@ async function isAuthenticated() {
   const { access_jwt, user } = await chrome.storage.local.get(['access_jwt', 'user']);
   return !!(access_jwt && user);
 }
+
+// ====== LEGACY PREMIUM MIGRATION - REMOVE AFTER 2026-02-01 ======
+// Migrate users who had premium in chrome.storage.sync from previous version
+async function migrateLegacyPremiumIfNeeded() {
+  try {
+    // Check if already successfully migrated
+    const { legacyPremiumMigrated } = await chrome.storage.local.get('legacyPremiumMigrated');
+    if (legacyPremiumMigrated) {
+      console.log('Legacy premium migration: already migrated, skipping');
+      return; // Already successfully migrated
+    }
+
+    // Check for legacy premium in sync storage
+    const { premium } = await chrome.storage.sync.get('premium');
+    console.log('Legacy premium migration: checking sync storage, premium =', premium);
+    if (!premium) {
+      // No legacy premium found - don't mark as migrated yet, user might set it later
+      console.log('Legacy premium migration: no premium in sync storage');
+      return;
+    }
+
+    // User has legacy premium - check if authenticated
+    const { access_jwt } = await chrome.storage.local.get('access_jwt');
+    if (!access_jwt) {
+      console.log('Legacy premium found but user not authenticated yet');
+      return; // Will try again when user logs in
+    }
+
+    console.log('Migrating legacy premium to server...');
+
+    // Call server to migrate premium
+    const resp = await fetch(`${WORKER_URL}/auth/migrate-legacy-premium`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + access_jwt
+      },
+      body: '{}'
+    });
+
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.success) {
+        // Update local JWT with new premium token
+        await chrome.storage.local.set({ access_jwt: data.jwt });
+        // Mark migration as complete
+        await chrome.storage.local.set({ legacyPremiumMigrated: true });
+        // Remove legacy premium from sync storage
+        await chrome.storage.sync.remove('premium');
+        console.log('Legacy premium migration successful!', data.migrated ? 'Migrated to server' : 'Already on server');
+      }
+    } else {
+      console.error('Legacy premium migration failed:', await resp.text());
+      // Don't mark as migrated so we can retry
+    }
+  } catch (error) {
+    console.error('Legacy premium migration error:', error);
+  }
+}
+// ====== END LEGACY PREMIUM MIGRATION ======
 
 chrome.action.onClicked.addListener(async (tab) => {
   // Check if user is authenticated
@@ -227,7 +307,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'login') {
     // Initiate Google OAuth login
     loginWithGoogleAndExchange(WORKER_URL, CLIENT_ID)
-      .then(user => {
+      .then(async user => {
+        // ====== LEGACY PREMIUM MIGRATION - REMOVE AFTER 2026-02-01 ======
+        await migrateLegacyPremiumIfNeeded();
+        // ====== END LEGACY PREMIUM MIGRATION ======
         sendResponse({ success: true, user });
       })
       .catch(error => {
@@ -314,7 +397,9 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       sourceHeadline: request.sourceHeadline,
       content: request.content,
       preferedLang: request.preferedLang || 'english',
-      mode: request.mode || 'robot'
+      mode: request.mode || 'robot',
+      isInArticle: request.isInArticle || false,
+      url: request.url || ''
     };
     console.log(JSON.stringify(Payload));
 
@@ -352,6 +437,11 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 });
 const REQUIRED_TOKEN = "e23de-32dd3-d2fg3fw-f34f3w"
+
+// ====== LEGACY PREMIUM MIGRATION - REMOVE AFTER 2026-02-01 ======
+// Try to migrate legacy premium on extension startup
+migrateLegacyPremiumIfNeeded();
+// ====== END LEGACY PREMIUM MIGRATION ======
 
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
   if (message.type === "openOptions" && message.token == REQUIRED_TOKEN) {

@@ -98,21 +98,28 @@ document.addEventListener('DOMContentLoaded', () => {
       updateCharacterModeUI();
       loadPromptsForMode(currentCharacterMode);
       if (autoReplaceCheckbox) {
-        autoReplaceCheckbox.checked = (typeof data.autoReplaceHeadlines === 'boolean') ? data.autoReplaceHeadlines : true;
+        autoReplaceCheckbox.checked = (typeof data.autoReplaceHeadlines === 'boolean') ? data.autoReplaceHeadlines : false;
       }
     })
   });
 
   function updatePremiumUI(premium) {
+    const autoReplaceSection = document.getElementById('autoReplaceSection');
     if (premium) {
       document.body.classList.add('premium-unlocked');
       if (customPromptsSection) {
         customPromptsSection.style.display = 'block';
       }
+      if (autoReplaceSection) {
+        autoReplaceSection.style.display = 'flex';
+      }
     } else {
       document.body.classList.remove('premium-unlocked');
       if (customPromptsSection) {
         customPromptsSection.style.display = 'none';
+      }
+      if (autoReplaceSection) {
+        autoReplaceSection.style.display = 'none';
       }
     }
   }
@@ -204,7 +211,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const dataToSave = {
       characterMode: currentCharacterMode,
       preferedLang: preferedLang.value,
-      autoReplaceHeadlines: autoReplaceCheckbox ? autoReplaceCheckbox.checked : true
+      autoReplaceHeadlines: autoReplaceCheckbox ? autoReplaceCheckbox.checked : false
     };
 
     if (isPremium) {
