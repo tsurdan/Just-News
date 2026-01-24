@@ -148,7 +148,7 @@ async function callProxy(workerUrl, groqPayload) {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer ' + (newToken || ''),
-            'X-JustNews-Key': "363bce11-3b8e-4e36-ae08-11d332dc8e23"
+            'X-Extension-Id': "363bce11-3b8e-4e36-ae08-11d332dc8e23"
           },
           body: JSON.stringify(groqPayload)
         });

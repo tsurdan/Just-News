@@ -1,6 +1,4 @@
 // TODO: Chang model to llama-3.1-8b-instant and test (cheaper than meta-llama/llama-4-scout-17b-16e-instruct)
-// TODO: More usage limits on free users
-// TODO: Check upgrade-to-premium spamming
 // TODO: Legal: update privacy policy and make legal research
 // TODO: Update texts
 // TODO: Update firefox code also
@@ -878,6 +876,7 @@ async function summarizeHomepageHeadlines(isArticle = false) {
     let hasRateLimit = false;
     let dailyQuotaExceeded = false;
     let rateLimitMessage = '';
+    let genericErrorMessage = '';
     
     errors.forEach(e => {
       let msg = e.reason.message || '';
@@ -895,11 +894,18 @@ async function summarizeHomepageHeadlines(isArticle = false) {
       } else if (msg.includes('exceeded')) {
         hasRateLimit = true;
         rateLimitMessage = msg;
+      } else {
+        // Collect generic error messages
+        if (msg.includes('Error extracting article content')) {
+          genericErrorMessage = 'Error extracting article content';
+        } else if (!genericErrorMessage) {
+          genericErrorMessage = msg.split(',')[0];
+        }
       }
     });
     
+    // Set rate limit cooldown to prevent automatic processing spam
     if (hasRateLimit) {
-      // Set rate limit cooldown to prevent automatic processing spam
       if (dailyQuotaExceeded || rateLimitMessage.includes('Daily limit') || rateLimitMessage.includes('retry tomorrow')) {
         rateLimitedUntil = Date.now() + DAILY_RATE_LIMIT_COOLDOWN_MS;
         console.log('Daily rate limit hit, pausing automatic processing for 1 hour');
@@ -907,49 +913,56 @@ async function summarizeHomepageHeadlines(isArticle = false) {
         rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
         console.log('Rate limit hit, pausing automatic processing for 1 minute');
       }
-      
-      // Skip notifications during automatic processing
-      if (isAutomaticProcessing) {
-        return;
-      }
-      
-      if (dailyQuotaExceeded) {
-        await createPremiumNotification('Daily limit exceeded. Please upgrade to premium for more usage.');
+    }
+    
+    // Skip notifications during automatic processing
+    if (isAutomaticProcessing) {
+      return;
+    }
+    
+    // Build the error message to display
+    let displayMessage = '';
+    if (hasRateLimit) {
+      if (dailyQuotaExceeded || rateLimitMessage.includes('Daily limit') || rateLimitMessage.includes('Daily token limit')) {
+        displayMessage = rateLimitMessage || 'Daily limit exceeded';
       } else {
-        // Only show notification for daily rate limits, not minute-based limits
-        if (rateLimitMessage.includes('Daily limit exceeded') || rateLimitMessage.includes('Daily token limit exceeded')) {
-          await createNotification(rateLimitMessage);
-        } else if (!isAutomaticProcessing) {
-          // Only show minute-based rate limits in manual mode
-          let displayMessage = rateLimitMessage;
-          if (minRetryAfter !== null) {
-            const minutes = Math.floor(minRetryAfter / 60);
-            const seconds = minRetryAfter % 60;
-            if (minutes > 0) {
-              displayMessage = `Rate limit exceeded. Try again in ${minutes}m ${seconds}s`;
-            } else {
-              displayMessage = `Rate limit exceeded. Try again in ${seconds} seconds`;
-            }
+        // Minute-based rate limit
+        if (minRetryAfter !== null) {
+          const minutes = Math.floor(minRetryAfter / 60);
+          const seconds = minRetryAfter % 60;
+          if (minutes > 0) {
+            displayMessage = `Rate limit exceeded. Try again in ${minutes}m ${seconds}s`;
+          } else {
+            displayMessage = `Rate limit exceeded. Try again in ${seconds} seconds`;
           }
-          await createNotification(displayMessage);
+        } else {
+          displayMessage = rateLimitMessage || 'Rate limit exceeded';
         }
       }
     } else {
-      // Don't show generic error messages during automatic processing
-      if (!isAutomaticProcessing) {
-        let errorTypes = new Set();
-        errors.forEach(e => {
-          let msg = e.reason.message || '';
-          if (msg.includes('Error extracting article content')) {
-            errorTypes.add('Error extracting article content');
-          } else {
-            errorTypes.add(msg.split(',')[0]);
-          }
-        });
-        let summary = Array.from(errorTypes).join(', ');
-        if (!summary.includes('Session expired. Please sign in'))
-        await createNotification(summary);
+      displayMessage = genericErrorMessage || 'Error processing headlines';
+    }
+    
+    // Skip session expired messages (login prompt will handle those)
+    if (displayMessage.includes('Session expired. Please sign in')) {
+      return;
+    }
+    
+    // For FREE users: show premium upgrade notification only for rate limit errors
+    // For other errors or PREMIUM users: show regular notification
+    if (!hasPremium && hasRateLimit) {
+      // Determine appropriate title and message based on error type
+      let premiumTitle, premiumMessage;
+      if (dailyQuotaExceeded || (rateLimitMessage && (rateLimitMessage.includes('Daily') || rateLimitMessage.includes('tomorrow')))) {
+        premiumTitle = 'Daily Limit Reached';
+        premiumMessage = displayMessage;
+      } else {
+        premiumTitle = 'Per Minute Limit Reached';
+        premiumMessage = displayMessage;
       }
+      await createPremiumNotification(premiumMessage, premiumTitle);
+    } else {
+      await createNotification(displayMessage);
     }
   }
 }
@@ -2191,7 +2204,7 @@ function showLoginPrompt() {
 }
 
 // Show premium upgrade notification with styled "Maybe later" button
-function createPremiumNotification(message) {
+function createPremiumNotification(message, customTitle = null) {
   return new Promise((resolve) => {
     const { host, shadow } = createIsolatedPopup();
     
@@ -2209,7 +2222,7 @@ function createPremiumNotification(message) {
     iconContainer.appendChild(icon);
 
     const title = document.createElement('h3');
-    title.textContent = 'Daily Limit Reached';
+    title.textContent = customTitle || 'Upgrade to Premium';
 
     const messageText = document.createElement('p');
     messageText.className = 'message-text';
