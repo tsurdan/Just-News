@@ -1,5 +1,5 @@
 // TODO: Chang model to llama-3.1-8b-instant and test (cheaper than meta-llama/llama-4-scout-17b-16e-instruct)
-// TODO: Legal: update privacy policy and make legal research
+// TODO: Legal: update privacy policy
 // TODO: Update texts
 // TODO: Update firefox code also
 // TODO: add many news sites
