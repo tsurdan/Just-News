@@ -1,17 +1,258 @@
+// Cache configuration
+const CACHE_PREFIX = 'justnews_cache_';
+const CACHE_TTL_DAYS = 1; // Cache expires after 1 day
+const MAX_CACHE_ENTRIES = 500; // Limit cache size to prevent storage bloat
+const CACHE_VERSION = 'v1'; // Increment to invalidate old cache format
+const MAX_CACHE_ENTRY_SIZE = 3000; // Max bytes per cache entry
+
 let premium = false; // Track premium status
 let isInitialized = false;
 let counter = 0;
 let articleSummaries = new Map(); // Cache for article summaries
 let ipu = false;
+let autoReplaceHeadlines = false; // Default: disabled
+let lastScrollY = 0;
+let scrollProcessingTimeout = null;
+let isAutomaticProcessing = false;
+let rateLimitedUntil = 0;
+const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+const DAILY_RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
+
+// ============= CACHE UTILITIES =============
+
+function generateCacheKey(url, headline, apiOptions = {}) {
+  const normalizedUrl = url.split('?')[0].split('#')[0];
+  const headlineHash = simpleHash(headline.trim().toLowerCase());
+  
+  const settingsString = JSON.stringify({
+    mode: apiOptions.mode || 'robot',
+    customPrompt: apiOptions.customPrompt || '',
+    systemPrompt: apiOptions.systemPrompt || '',
+    preferedLang: apiOptions.preferedLang || 'english'
+  });
+  const settingsHash = simpleHash(settingsString);
+  
+  return `${CACHE_PREFIX}${CACHE_VERSION}_${normalizedUrl}_${headlineHash}_${settingsHash}`;
+}
+
+function simpleHash(str) {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+async function getCachedHeadline(url, originalHeadline, apiOptions = {}) {
+  try {
+    const cacheKey = generateCacheKey(url, originalHeadline, apiOptions);
+    const result = await chrome.storage.local.get(cacheKey);
+    
+    if (!result[cacheKey]) {
+      return null;
+    }
+    
+    const cached = result[cacheKey];
+    const now = Date.now();
+    const age = now - cached.timestamp;
+    const maxAge = CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+    
+    if (age > maxAge) {
+      await chrome.storage.local.remove(cacheKey);
+      return null;
+    }
+    
+    return cached;
+  } catch (error) {
+    console.error('Error reading cache:', error);
+    return null;
+  }
+}
+
+async function setCachedHeadline(url, originalHeadline, newHeadline, summary, apiOptions = {}) {
+  try {
+    const cacheKey = generateCacheKey(url, originalHeadline, apiOptions);
+    const cacheData = {
+      url,
+      originalHeadline,
+      newHeadline,
+      summary,
+      timestamp: Date.now(),
+      version: CACHE_VERSION
+    };
+    
+    const approximateSize = JSON.stringify(cacheData).length;
+    if (approximateSize > MAX_CACHE_ENTRY_SIZE) {
+      return;
+    }
+    
+    await chrome.storage.local.set({ [cacheKey]: cacheData });
+    await cleanupCacheIfNeeded();
+  } catch (error) {
+    console.error('Error writing cache:', error);
+  }
+}
+
+async function cleanupCacheIfNeeded() {
+  try {
+    const allData = await chrome.storage.local.get(null);
+    const cacheKeys = Object.keys(allData).filter(key => key.startsWith(CACHE_PREFIX));
+    
+    if (cacheKeys.length < MAX_CACHE_ENTRIES) {
+      return;
+    }
+    
+    const now = Date.now();
+    const maxAge = CACHE_TTL_DAYS * 24 * 60 * 60 * 1000;
+    const entriesToRemove = [];
+    const validEntries = [];
+    
+    for (const key of cacheKeys) {
+      const entry = allData[key];
+      if (!entry || !entry.timestamp) {
+        entriesToRemove.push(key);
+        continue;
+      }
+      
+      const age = now - entry.timestamp;
+      if (age > maxAge || entry.version !== CACHE_VERSION) {
+        entriesToRemove.push(key);
+      } else {
+        validEntries.push({ key, timestamp: entry.timestamp });
+      }
+    }
+    
+    if (validEntries.length > MAX_CACHE_ENTRIES) {
+      validEntries.sort((a, b) => a.timestamp - b.timestamp);
+      const toRemove = validEntries.length - MAX_CACHE_ENTRIES;
+      for (let i = 0; i < toRemove; i++) {
+        entriesToRemove.push(validEntries[i].key);
+      }
+    }
+    
+    if (entriesToRemove.length > 0) {
+      await chrome.storage.local.remove(entriesToRemove);
+    }
+  } catch (error) {
+    console.error('Error during cache cleanup:', error);
+  }
+}
+
+// ============= END CACHE UTILITIES =============
+
+// Detect if we're on an article page
+function isArticlePage() {
+  const h1Tags = document.querySelectorAll('h1');
+  const paragraphs = document.querySelectorAll('p');
+  
+  if (h1Tags.length !== 1) return false;
+  if (paragraphs.length < 3) return false;
+  
+  const paragraphText = Array.from(paragraphs)
+    .map(p => p.textContent.trim())
+    .join(' ');
+  
+  if (paragraphText.length < 500) return false;
+  
+  return true;
+}
+
+// Extract article headline from article page
+function extractArticleHeadline() {
+  const selectors = [
+    'h1[itemprop="headline"]',
+    'h1.article-title',
+    'h1.entry-title',
+    'h1.post-title',
+    'article h1',
+    '[role="article"] h1',
+    '.article-header h1',
+    '.post-header h1',
+    'h1',
+  ];
+  
+  for (const selector of selectors) {
+    const element = document.querySelector(selector);
+    if (element && element.textContent.trim()) {
+      return {
+        element: element,
+        text: element.textContent.trim()
+      };
+    }
+  }
+  
+  return null;
+}
+
+// Extract article content from article page
+function extractArticleContent() {
+  const articleSelectors = [
+    'article',
+    '[role="article"]',
+    '.article-content',
+    '.post-content',
+    '.entry-content',
+    '.story-body',
+    'main',
+  ];
+  
+  let articleContainer = null;
+  for (const selector of articleSelectors) {
+    articleContainer = document.querySelector(selector);
+    if (articleContainer) break;
+  }
+  
+  if (!articleContainer) {
+    articleContainer = document.body;
+  }
+  
+  const unwantedSelectors = [
+    'script', 'style', 'nav', 'header', 'footer', 
+    'aside', '.sidebar', '.advertisement', '.ad', 
+    '.comments', '.related-articles'
+  ];
+  
+  const clone = articleContainer.cloneNode(true);
+  unwantedSelectors.forEach(selector => {
+    clone.querySelectorAll(selector).forEach(el => el.remove());
+  });
+  
+  const paragraphs = Array.from(clone.querySelectorAll('p'));
+  let content = paragraphs.map(p => p.textContent.trim()).filter(t => t.length > 0).join(' ');
+  
+  if (!content || content.length < 100) {
+    const textElements = Array.from(clone.querySelectorAll('div, span'));
+    content = textElements
+      .map(el => el.textContent.trim())
+      .filter(t => t.length > 50)
+      .join(' ');
+  }
+  
+  return content;
+}
+
+// Helper function to check if a headline is inside article paragraph content
+function isInsideArticleParagraph(headline) {
+  let element = headline;
+  if (element.tagName === 'P') return true;
+  
+  let parent = element.parentElement;
+  while (parent && parent !== document.body) {
+    if (parent.tagName === 'P') return true;
+    parent = parent.parentElement;
+  }
+  
+  return false;
+}
 
 // Function to initialize premium status - only called once during startup
 async function initializePremiumStatus() {
   try {
     const response = await chrome.runtime.sendMessage({ action: 'checkPremium' });
     ipu = response.ipb;
-    console.log('Premium status initialized:', ipu);
   } catch (error) {
-    console.log('Error checking premium status:', error);
     ipu = false;
   }
 }
@@ -21,11 +262,56 @@ function ipb() {
   return ipu;
 }
 
+// Setup scroll listener to process headlines as user scrolls
+function setupScrollListener() {
+  let isProcessing = false;
+
+  window.addEventListener('scroll', () => {
+    if (!autoReplaceHeadlines || isProcessing) return;
+    if (Date.now() < rateLimitedUntil) return;
+
+    const currentScrollY = window.scrollY;
+    const scrollDifference = Math.abs(currentScrollY - lastScrollY);
+
+    if (scrollDifference > 300) {
+      clearTimeout(scrollProcessingTimeout);
+      scrollProcessingTimeout = setTimeout(async () => {
+        isProcessing = true;
+        isAutomaticProcessing = true;
+        lastScrollY = currentScrollY;
+        counter = 0;
+        await summarizeHeadlines();
+        isAutomaticProcessing = false;
+        isProcessing = false;
+      }, 500);
+    }
+  }, { passive: true });
+}
+
 async function initializeContentScript() {
   if (isInitialized) return;
   
   // Initialize premium status
   await initializePremiumStatus();
+  
+  // Load auto-replace setting (premium only)
+  if (ipb()) {
+    const data = await chrome.storage.sync.get(['autoReplaceHeadlines']);
+    if (typeof data.autoReplaceHeadlines === 'boolean') {
+      autoReplaceHeadlines = data.autoReplaceHeadlines;
+    }
+    
+    if (autoReplaceHeadlines) {
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', () => {
+          setTimeout(() => summarizeHeadlines(), 500);
+        });
+      } else {
+        setTimeout(() => summarizeHeadlines(), 500);
+      }
+      setupScrollListener();
+    }
+  }
   
   // Add tooltip styles to the page
   addTooltipStyles();
@@ -34,12 +320,11 @@ async function initializeContentScript() {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'summarizeHeadlines') {
       counter = 0;
+      rateLimitedUntil = 0;
       summarizeHeadlines();
       sendResponse({status: 'Processing started'});
     } else if (request.action === 'premiumStatusChanged') {
-      // Update cached premium status when it changes
       ipu = request.ipb;
-      console.log('Premium status updated:', ipu);
       sendResponse({status: 'premium status updated'});
     }
     return true;
@@ -89,13 +374,102 @@ function addTooltipStyles() {
 }
 
 async function summarizeHeadlines() {
+  // Check if this is an article page
+  const isArticle = isArticlePage();
+  
+  // STEP 1: Always process linked headlines (homepage-style processing)
+  try {
+    await summarizeHomepageHeadlines(isArticle);
+  } catch (error) {
+    console.log('Error processing headlines: ' + error.message);
+  }
+  
+  // STEP 2: Additionally check if this is an article page and process the main headline
+  if (isArticle) {
+    await summarizeArticleHeadline();
+  }
+}
+
+// Handle article page headline replacement
+async function summarizeArticleHeadline() {
   let apiKey = "";
   let apiProvider = "groq";
   let model = "";
   let customPrompt = "";
   let systemPrompt = "";
   let preferedLang = "english";
-  const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
+  const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.`;
+  const defaultPrompt = `Rewrite the headline with these rules:
+
+- Robotic, factual, no clickbait
+- Summarize the key point of the article
+- Keep the original language (if Hebrew, give new Hebrew title) and similar length
+- Be objective and informative`;
+
+  try {
+    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang']);
+    apiKey = settings.apiKey || "";
+    apiProvider = settings.apiProvider || "groq";
+    model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
+    customPrompt = settings.customPrompt || defaultPrompt;
+    systemPrompt = settings.systemPrompt || defaultSystemPrompt;
+    preferedLang = settings.preferedLang || "english";
+    if (!apiKey) return; // No API key, skip article headline
+  } catch (error) {
+    return;
+  }
+  
+  const articleUrl = window.location.href;
+  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang};
+  
+  const headlineData = extractArticleHeadline();
+  if (!headlineData) return;
+  if (headlineData.text.startsWith('~')) return; // Already processed
+  
+  const content = extractArticleContent();
+  if (!content || content.length < 100) return;
+  
+  const sourceHeadline = headlineData.text;
+  const headlineElement = headlineData.element;
+  
+  // Check cache first
+  const cached = await getCachedHeadline(articleUrl, sourceHeadline, apiOptions);
+  if (cached) {
+    typeHeadline(headlineElement, `~${cached.newHeadline}`, true);
+    if (ipb() && cached.summary) {
+      articleSummaries.set(articleUrl, cached.summary);
+    }
+    chrome.runtime.sendMessage({ action: 'headlineChanged' });
+    return;
+  }
+  
+  try {
+    const summary = await summarizeContnet(sourceHeadline, content, apiOptions);
+    const { headline: newHeadline, summary: articleSummary } = parseAIResponse(summary);
+    
+    await setCachedHeadline(articleUrl, sourceHeadline, newHeadline, articleSummary, apiOptions);
+    
+    typeHeadline(headlineElement, `~${newHeadline}`, false);
+    
+    if (ipb() && articleSummary) {
+      articleSummaries.set(articleUrl, articleSummary);
+    }
+    
+    chrome.runtime.sendMessage({ action: 'headlineChanged' });
+  } catch (error) {
+    // Silently skip errors for article headlines
+  }
+}
+
+// Original function renamed to handle homepage headlines
+async function summarizeHomepageHeadlines(isArticle = false) {
+  let apiKey = "";
+  let apiProvider = "groq";
+  let model = "";
+  let customPrompt = "";
+  let systemPrompt = "";
+  let preferedLang = "english";
+  const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.`;
   const defaultPrompt = `Rewrite the headline with these rules:
 
 - Robotic, factual, no clickbait
@@ -112,11 +486,16 @@ async function summarizeHeadlines() {
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     preferedLang = settings.preferedLang || "english";
     if (!apiKey) {
-      await promptForApiKey('Enter key (one-time setup)');
+      if (!isAutomaticProcessing) {
+        await promptForApiKey('Enter key (one-time setup)');
+      }
       return;
     }
   } catch (error) {
-    await createNotification('Error checking API key. Please try again.');
+    if (!isAutomaticProcessing) {
+      await createNotification('Error checking API key. Please try again.');
+    }
+    return;
   }
   const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
   
@@ -124,7 +503,7 @@ async function summarizeHeadlines() {
   if (!ipb()) {
     const limitCheck = await chrome.runtime.sendMessage({ action: 'checkDailyLimit' });
     if (!limitCheck.canProceed) {
-      if (limitCheck.reason === 'dailyLimit') {
+      if (limitCheck.reason === 'dailyLimit' && !isAutomaticProcessing) {
         await createNotification('Daily limit reached. \n\nTo remove the limit, upgrade to premium!');
       }
       return;
@@ -134,7 +513,6 @@ async function summarizeHeadlines() {
   const limit = 20; // Maximum headlines per click
   let firstHeadlineChanged = false;
 
-  // This function will be injected into the page
   let headlines = Array.from(document.querySelectorAll('a, a span, h1, h2, h3, h4, h5, h6, span[class*="title"], span[class*="title"], strong[data-type*="title"], span[class*="headline"], strong[data-type*="headline"], span[data-type*="title"], strong[class*="title"], span[data-type*="headline"], strong[class*="headline"], span[class*="Title"], strong[data-type*="Title"], span[class*="Headline"], strong[data-type*="Headline"], span[data-type*="Title"], strong[class*="Title"], span[data-type*="Headline"], strong[class*="Headline"]'));
   
   // Filter out headlines with images
@@ -150,17 +528,14 @@ async function summarizeHeadlines() {
   const uniqueHeadlines = new Set();
   const processedElements = new Set();
   headlines = headlines.filter(headline => {
-    // Skip if this element or its parent/child was already processed
     if (processedElements.has(headline)) return false;
     
-    // Check if any parent element was already selected
     let parent = headline.parentElement;
     while (parent) {
       if (processedElements.has(parent)) return false;
       parent = parent.parentElement;
     }
     
-    // Check if any child element was already selected
     const descendants = headline.querySelectorAll('*');
     for (let descendant of descendants) {
       if (processedElements.has(descendant)) return false;
@@ -181,21 +556,31 @@ async function summarizeHeadlines() {
     const rect = headline.getBoundingClientRect();
     const style = window.getComputedStyle(headline);
     
-    // Check if headline is at least partially visible in viewport
-    if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) {
       return false;
     }
     
-    // Check if element is hidden via CSS
-    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0 || rect.width === 0 || rect.height === 0) {
+    if (rect.width === 0 && rect.height === 0) {
+      return false;
+    }
+    
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
       return false;
     }
     
     return true;
   });
 
+  // Filter out links inside article paragraphs (only when on article page)
+  if (isArticle) {
+    headlines = headlines.filter(headline => !isInsideArticleParagraph(headline));
+  }
+
   // Filter out subject headlines
-  headlines = headlines.filter(headline => headline.textContent.split(' ').length > 3);
+  headlines = headlines.filter(headline => {
+    const words = headline.textContent.trim().split(/\s+/).filter(w => w.length > 0);
+    return words.length > 3;
+  });
 
   // Sort headlines by font size in descending order
   headlines.sort((a, b) => {
@@ -214,36 +599,48 @@ async function summarizeHeadlines() {
     const articleUrl = headline.href || headline.closest('a')?.href || headline.querySelector('a')?.href;
     if (articleUrl) {
       promises.push(
-        fetchSummary(sourceHeadline, articleUrl, apiOptions)
-          .then(result => {
-            // Parse the JSON response using dedicated function
-            const { headline: newHeadline, summary } = parseAIResponse(result);
-            
-            // Cache the summary for tooltip use
-            if (ipb()) {
-              articleSummaries.set(articleUrl, summary);
+        (async () => {
+          // Check cache first
+          const cached = await getCachedHeadline(articleUrl, sourceHeadline, apiOptions);
+          if (cached) {
+            typeHeadline(headline, `~${cached.newHeadline}`, true);
+            if (ipb() && cached.summary) {
+              articleSummaries.set(articleUrl, cached.summary);
             }
-
-            typeHeadline(headline, `~${newHeadline}`);
             counter++;
+            return;
+          }
+          
+          // Not in cache - fetch from AI
+          const result = await fetchSummary(sourceHeadline, articleUrl, apiOptions);
+          const { headline: newHeadline, summary } = parseAIResponse(result);
+          
+          // Save to cache
+          await setCachedHeadline(articleUrl, sourceHeadline, newHeadline, summary, apiOptions);
+          
+          // Cache the summary for tooltip use
+          if (ipb()) {
+            articleSummaries.set(articleUrl, summary);
+          }
 
-            // Update daily count with background script
-            if (!ipb()) {
-              chrome.runtime.sendMessage({ action: 'incrementDailyCount' }, (usage) => {});
-            }
+          typeHeadline(headline, `~${newHeadline}`, false);
+          counter++;
 
-            // Notify background to clear badge after first headline changes
-            if (!firstHeadlineChanged) {
-              firstHeadlineChanged = true;
-              chrome.runtime.sendMessage({ action: 'headlineChanged' });
-            }
-          })
+          // Update daily count with background script
+          if (!ipb()) {
+            chrome.runtime.sendMessage({ action: 'incrementDailyCount' }, (usage) => {});
+          }
+
+          // Notify background to clear badge after first headline changes
+          if (!firstHeadlineChanged) {
+            firstHeadlineChanged = true;
+            chrome.runtime.sendMessage({ action: 'headlineChanged' });
+          }
+        })()
           .catch(error => {
-            // Skip this headline if there's an error (including JSON parsing issues)
             if (error.message && error.message.includes('Rate limit')) {
               rateLimitHit = true;
             }
-            // Don't throw the error for JSON parsing issues, just skip the headline
             if (!error.message.includes('skipping')) {
               throw new Error(error.message);
             }
@@ -255,9 +652,25 @@ async function summarizeHeadlines() {
   const results = await Promise.allSettled(promises);
   const succes = results.filter(result => result.status === 'fulfilled');  
   const errors = results.filter(result => result.status === 'rejected');
+  
   if (succes.length === 0 && errors.length > 0) {
-    let minRetryAfter = null;
+    // Set rate limit cooldown
     let hasRateLimit = false;
+    errors.forEach(e => {
+      let msg = e.reason.message || '';
+      if (msg.includes('Rate limit') || msg.includes('exceeded')) {
+        hasRateLimit = true;
+      }
+    });
+    
+    if (hasRateLimit) {
+      rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
+    }
+    
+    if (isAutomaticProcessing) return;
+    
+    let minRetryAfter = null;
+    hasRateLimit = false;
     errors.forEach(e => {
       let msg = e.reason.message || '';
       if (msg.includes('Rate limit')) {
@@ -296,7 +709,6 @@ async function summarizeHeadlines() {
 function parseAIResponseOld(result) {
   let newHeadline, summary;
   
-  // Clean the result first - remove markdown code blocks if present
   let cleanResult = result.trim();
   if (cleanResult.startsWith('```json')) {
     cleanResult = cleanResult.replace(/```json\s*/, '').replace(/\s*```$/, '');
@@ -306,18 +718,15 @@ function parseAIResponseOld(result) {
   }
   
   try {
-    // Try to parse as JSON
     const parsed = JSON.parse(cleanResult);
     newHeadline = parsed.new_headline || parsed.headline || parsed.title;
     summary = parsed.article_summary || parsed.summary || parsed.description;
     
-    // If we don't have both parts, throw error to trigger fallback
     if (!newHeadline || !summary) {
       throw new Error('Missing required fields in JSON');
     }
     
   } catch (e) {
-    // Enhanced fallback: try to extract JSON from text with better patterns
     const jsonPatterns = [
       /\{[^{}]*"new_headline"[^{}]*"article_summary"[^{}]*\}/s,
       /\{[^{}]*"headline"[^{}]*"summary"[^{}]*\}/s,
@@ -341,36 +750,31 @@ function parseAIResponseOld(result) {
             break;
           }
         } catch (e2) {
-          continue; // Try next pattern
+          continue;
         }
       }
     }
     
-    // If no valid JSON found, skip this headline to prevent showing raw JSON
     if (!jsonFound) {
       throw new Error('Unable to parse AI response - skipping headline');
     }
   }
   
-  // Validate headline doesn't look like JSON
   if (newHeadline.includes('{') || newHeadline.includes('"new_headline"')) {
     throw new Error('Headline appears to be malformed JSON - skipping');
   }
   
-  // Clean and validate the headline
   if (typeof newHeadline !== 'string' || newHeadline.trim() === '') {
     throw new Error('Invalid headline format - skipping');
   }
   
   let sanitizedHeadline = newHeadline
-    .replace(/[\r\n]+/g, ' ')      // Replace newlines with spaces
-    .replace(/\\"/g, '"')          // Fix escaped quotes first
-    .replace(/"/g, "'")            // Replace double quotes with single quotes
-    .replace(/\\/g, '')            // Remove remaining backslashes
+    .replace(/[\r\n]+/g, ' ')
+    .replace(/\\"/g, '"')
+    .replace(/"/g, "'")
+    .replace(/\\/g, '')
     .trim();
   
-  
-  // Clean the summary
   if (typeof summary === 'string') {
     summary = summary.replace(/[\r\n]+/g, ' ').trim();
   } else {
@@ -381,7 +785,6 @@ function parseAIResponseOld(result) {
 }
 
 function parseAIResponseNew(result){
-  // Handle the case where result might be an object with a 'text' property
   const text = typeof result === 'string' ? result : result?.text || result;
   
   if (!text) {
@@ -397,51 +800,39 @@ function parseAIResponseNew(result){
         summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
       };
     }
-  } catch (e) {
-    console.log('Step 1 failed:', e.message);
-  }
+  } catch (e) {}
   
   // Step 2: Clean up markdown and try parsing JSON
   let cleanedText = text
-    .replace(/```json\s*/g, '')  // Remove ```json
-    .replace(/```\s*/g, '')      // Remove closing ```
-    .replace(/,\s*}/g, '}')      // Fix trailing commas
+    .replace(/```json\s*/g, '')
+    .replace(/```\s*/g, '')
+    .replace(/,\s*}/g, '}')
     .trim();
   
-  // Try parsing the cleaned text
   try {
     const parsed = JSON.parse(cleanedText);
     if (parsed.new_headline || parsed.headline || parsed.title) {
-      const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, '');
       return {
-        headline: headline,
+        headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
         summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
       };
     }
   } catch (e) {
-    // JSON is malformed, try to fix it by adding missing closing quote and brace
     let fixedText = cleanedText;
     if (!fixedText.endsWith('}')) {
-      // Add missing closing quote if the last character isn't a quote
-      if (!fixedText.endsWith('"')) {
-        fixedText += '"';
-      }
-      // Add missing closing brace
+      if (!fixedText.endsWith('"')) fixedText += '"';
       fixedText += '}';
     }
     
     try {
       const parsed = JSON.parse(fixedText);
       if (parsed.new_headline || parsed.headline || parsed.title) {
-        const headline = (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, '');
         return {
-          headline: headline,
+          headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
           summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
         };
       }
-    } catch (e2) {
-      // Still failed, continue to next step
-    }
+    } catch (e2) {}
   }
     
   // Step 3: Try to find and parse just the JSON part
@@ -455,17 +846,14 @@ function parseAIResponseNew(result){
           summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
         };
       }
-    } catch (e) {
-      console.log('Step 3 failed:', e.message);
-    }
+    } catch (e) {}
   }
   
-  // Step 4: Manual text extraction as absolute last resort
+  // Step 4: Manual text extraction
   const headline = extractFirstFieldValue(text, 'new_headline');
   
   if (headline) {
     const summary = extractSecondFieldValue(text, 'article_summary');
-
     return {
       headline: headline.replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
       summary: summary || 'Summary not available'
@@ -475,11 +863,6 @@ function parseAIResponseNew(result){
   throw new Error('Could not extract headline from AI response');
 }
 
-/**
- * Robust 3-step parser that handles quotes and slashes properly
- * @param {string} result - Pre-cleaned result string
- * @returns {object} - {headline: string, summary: string}
- */
 function parseAIResponse(result) {
   try {
     return parseAIResponseOld(result);
@@ -488,19 +871,13 @@ function parseAIResponse(result) {
   }
 }
 
-/**
- * Extract field value from text - handles quotes and slashes properly
- */
 function extractFirstFieldValue(text, fieldName) {
-  // Don't clean backslashes yet - work with original text
   const fieldPattern = `"${fieldName}": "`;
   const fieldStart = text.indexOf(fieldPattern);
   if (fieldStart === -1) return null;
   
   const valueStart = fieldStart + fieldPattern.length;
   
-  // Find the closing quote by looking for the pattern: ", "article_summary"
-  // or the pattern: "\n}\n``` (end of JSON)
   let valueEnd = text.indexOf('", "article_summary"', valueStart);
   if (valueEnd === -1) {
     valueEnd = text.indexOf('",\n  "article_summary"', valueStart);
@@ -509,13 +886,10 @@ function extractFirstFieldValue(text, fieldName) {
     valueEnd = text.indexOf('"\n}', valueStart);
   }
   if (valueEnd === -1) {
-    // Last resort - find end of text
     valueEnd = text.length;
   }
   
   let value = text.substring(valueStart, valueEnd);
-  
-  // Now clean the extracted value
   value = value.replace(/\\"/g, '"').replace(/\\/g, '');
   
   return value;
@@ -528,115 +902,109 @@ function extractSecondFieldValue(text, fieldName) {
   
   const valueStart = fieldStart + fieldPattern.length;
   
-  // Find the closing quote by looking for end patterns
   let valueEnd = text.indexOf('"\n}', valueStart);
   if (valueEnd === -1) {
     valueEnd = text.indexOf('"}', valueStart);
   }
   if (valueEnd === -1) {
-    // Last resort - find end of text
     valueEnd = text.length;
   }
   
   let value = text.substring(valueStart, valueEnd);
-  
-  // Clean the extracted value
   value = value.replace(/\\"/g, '"').replace(/\\/g, '');
   
   return value;
 }
 
-/**
- * Try to fix malformed JSON
- */
 
-
-
-function typeHeadline(element, text) {
-  // Mark the element as processed immediately to prevent double-processing
+function typeHeadline(element, text, fromCache = false) {
   element.classList.add('just-news-processed-headline');
   
-  // Find the actual text element to replace
-  // Priority: span with text, direct text node, or the element itself
   let targetElement = element;
   
-  // Look for text-containing spans first
   const textSpan = element.querySelector('span');
   if (textSpan && textSpan.textContent.trim()) {
     targetElement = textSpan;
   } else {
-    // Check if the element contains a link with text
     const link = element.querySelector('a');
     if (link && link.textContent.trim()) {
-      // If the link has a span inside, target that
       const linkSpan = link.querySelector('span');
       if (linkSpan && linkSpan.textContent.trim()) {
         targetElement = linkSpan;
       } else {
-        // Target the link directly
         targetElement = link;
       }
     }
   }
   
+  // If from cache, replace immediately without animation
+  if (fromCache) {
+    targetElement.textContent = text;
+    if (ipb()) {
+      setupTooltip(element);
+    }
+    return;
+  }
+  
   let index = 0;
   targetElement.textContent = '';
-  const interval = setInterval(() => {
+  
+  if (targetElement._typingInterval) {
+    clearInterval(targetElement._typingInterval);
+  }
+  
+  targetElement._typingInterval = setInterval(() => {
+    if (!document.body.contains(targetElement)) {
+      clearInterval(targetElement._typingInterval);
+      targetElement._typingInterval = null;
+      return;
+    }
+    
     if (index < text.length) {
       targetElement.textContent += text[index];
       index++;
     } else {
-      clearInterval(interval);
-      // Add tooltip functionality after typing is complete
+      clearInterval(targetElement._typingInterval);
+      targetElement._typingInterval = null;
       if (ipb()) {
         setupTooltip(element);
       }
     }
-  }, 50); // Adjust typing speed by changing the interval time
+  }, 50);
 }
 
 // Setup tooltip functionality for a processed headline
 function setupTooltip(element) {
-  // Element is already marked as processed by typeHeadline function
-  
   let tooltip = null;
   let tooltipTimeout = null;
-  const articleUrl = element.href || element.closest('a')?.href || element.querySelector('a')?.href;
+  const articleUrl = element.href || element.closest('a')?.href || element.querySelector('a')?.href || window.location.href;
   
   if (!articleUrl) return;
   
   element.addEventListener('mouseenter', () => {
-    // Clear any existing timeout
     if (tooltipTimeout) {
       clearTimeout(tooltipTimeout);
     }
     
-    // Add delay before showing tooltip
     tooltipTimeout = setTimeout(() => {
-      // Create tooltip
       tooltip = document.createElement('div');
       tooltip.className = 'just-news-tooltip';
       
-      // Get cached summary (should already be available from initial API call)
-        if (articleSummaries.has(articleUrl)) {
-          const summary = articleSummaries.get(articleUrl);
-          tooltip.textContent = summary;
-        } else {
-          tooltip.textContent = 'Summary unavailable';
-        }
-        document.body.appendChild(tooltip);
-      // Position tooltip after a small delay to ensure it's rendered
+      if (articleSummaries.has(articleUrl)) {
+        const summary = articleSummaries.get(articleUrl);
+        tooltip.textContent = summary;
+      } else {
+        tooltip.textContent = 'Summary unavailable';
+      }
+      document.body.appendChild(tooltip);
       setTimeout(() => {
         positionTooltip(element, tooltip);
-        
-        // Show tooltip
         tooltip.classList.add('show');
       }, 10);
-    }, 500); // 500ms delay before showing tooltip
+    }, 500);
   });
   
   element.addEventListener('mouseleave', () => {
-    // Clear timeout if mouse leaves before tooltip shows
     if (tooltipTimeout) {
       clearTimeout(tooltipTimeout);
       tooltipTimeout = null;
@@ -654,26 +1022,20 @@ function setupTooltip(element) {
   });
 }
 
-// Position tooltip relative to the element and mouse
-function positionTooltip(element, tooltip, mouseEvent = null) {
+// Position tooltip relative to the element
+function positionTooltip(element, tooltip) {
   const rect = element.getBoundingClientRect();
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
   
-  let x, y;
+  let x = rect.left + (rect.width / 2);
+  let y = rect.bottom + 10;
   
-  // Always position tooltip centered under the headline
-  x = rect.left + (rect.width / 2);
-  y = rect.bottom + 10;
+  const tooltipWidth = 350;
+  const tooltipHeight = 100;
   
-  // Make sure tooltip stays within viewport
-  const tooltipWidth = 350; // max-width from CSS
-  const tooltipHeight = 100; // estimate
-  
-  // Center the tooltip horizontally relative to its own width
   x = x - (tooltipWidth / 2);
   
-  // Adjust if tooltip goes off screen horizontally
   if (x + tooltipWidth > viewportWidth - 10) {
     x = viewportWidth - tooltipWidth - 10;
   }
@@ -681,7 +1043,6 @@ function positionTooltip(element, tooltip, mouseEvent = null) {
     x = 10;
   }
   
-  // Adjust if tooltip goes off screen vertically
   if (y + tooltipHeight > viewportHeight - 10) {
     y = rect.top - tooltipHeight - 10;
   }
@@ -699,7 +1060,6 @@ async function fetchSummary(sourceHeadline, url, options) {
   let summary = "";
   try {
     const content = await fetchContent(url);
-    // Ensure model, customPrompt, systemPrompt, apiProvider are in scope
     summary = await summarizeContnet(
       sourceHeadline,
       content,
@@ -765,7 +1125,6 @@ async function fetchContent(url) {
 async function summarizeContnet(sourceHeadline, content, options) {
   const { apiKey, apiProvider, model, customPrompt, systemPrompt, preferedLang } = options;
   
-  // System-controlled instructions that users cannot modify
   const systemInstructions = `
 
 Original: ${sourceHeadline}
@@ -788,7 +1147,7 @@ Do not add any text before or after the JSON. Only return the JSON object.`;
     apiKey,
     model,
     systemPrompt,
-    apiProvider // <-- pass provider
+    apiProvider
   });
   if (!response || response?.error || !response.summary) {
     throw new Error('Error fetching AI summary ' + response?.error);
@@ -836,7 +1195,7 @@ function createApiKeyPrompt(message, currentKey = '') {
   `;
 
   const title = document.createElement('h3');
-  title.textContent = '🚀 Quick Free Setup Required';
+  title.textContent = '\u{1F680} Quick Free Setup Required';
   title.style.cssText = `
     text-align: center;
     font-size: 18px;
@@ -856,7 +1215,6 @@ function createApiKeyPrompt(message, currentKey = '') {
     direction: ltr;
   `;
 
-  // Create step 1 - Sign up (clickable)
   const step1 = document.createElement('a');
   step1.href = 'https://console.groq.com/';
   step1.target = '_blank';
@@ -881,9 +1239,9 @@ function createApiKeyPrompt(message, currentKey = '') {
     <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">1</span>
     <div style="flex: 1;">
       <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Sign up to Groq AI</div>
-      <div style="font-size: 12px; color: #666;">Create your free account • Click to open</div>
+      <div style="font-size: 12px; color: #666;">Create your free account &bull; Click to open</div>
     </div>
-    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">→</span>
+    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">&rarr;</span>
   `;
 
   step1.onmouseover = () => {
@@ -899,7 +1257,6 @@ function createApiKeyPrompt(message, currentKey = '') {
     step1.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
   };
 
-  // Create step 2 - Generate key (clickable)
   const step2 = document.createElement('a');
   step2.href = 'https://console.groq.com/keys';
   step2.target = '_blank';
@@ -924,9 +1281,9 @@ function createApiKeyPrompt(message, currentKey = '') {
     <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">2</span>
     <div style="flex: 1;">
       <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Generate your key</div>
-      <div style="font-size: 12px; color: #666;">Create your API key • Click to open</div>
+      <div style="font-size: 12px; color: #666;">Create your API key &bull; Click to open</div>
     </div>
-    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">→</span>
+    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">&rarr;</span>
   `;
 
   step2.onmouseover = () => {
@@ -1060,18 +1417,11 @@ function createApiKeyPrompt(message, currentKey = '') {
   promptBox.appendChild(buttonContainer);
   overlay.appendChild(promptBox);
 
-  // Add the slideIn animation
   const style = document.createElement('style');
   style.textContent = `
     @keyframes slideIn {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   `;
   document.head.appendChild(style);
@@ -1149,7 +1499,6 @@ function createNotificationPrompt(message) {
     gap: 12px;
   `;
 
-  // Add upgrade button only for daily limit message
   if (message === "Daily limit reached. \n\nTo remove the limit, upgrade to premium!") {
     const upgradeButton = document.createElement('a');
     upgradeButton.href = 'https://tsurdan.github.io/Just-News/premium.html';
@@ -1158,13 +1507,7 @@ function createNotificationPrompt(message) {
       position: relative;
       padding: 2px;
       border-radius: 30px;
-      background: linear-gradient(135deg, 
-        #8A2BE2 0%,
-        #58CC02 25%,
-        #6200EE 50%,
-        #58CC02 75%,
-        #8A2BE2 100%
-      );
+      background: linear-gradient(135deg, #8A2BE2 0%, #58CC02 25%, #6200EE 50%, #58CC02 75%, #8A2BE2 100%);
       background-size: 300% 300%;
       animation: gradientShift 8s linear infinite;
       text-decoration: none;
@@ -1223,7 +1566,6 @@ function createNotificationPrompt(message) {
     cancelButton.style.transform = 'translateY(0)';
   };
 
-  // Add style for animations
   const style = document.createElement('style');
   style.textContent = `
     @keyframes slideIn {
@@ -1265,9 +1607,7 @@ async function promptForApiKey(message, currentKey = '') {
     cancelButton.onclick = () => {
       try {
         document.body.removeChild(overlay);
-      } catch (error) {
-        // Ignore if already removed
-      }
+      } catch (error) {}
       resolve(null);
     };
   });
@@ -1285,5 +1625,7 @@ async function createNotification(message) {
   });
 }
 
+// Initialize cache cleanup on startup
+cleanupCacheIfNeeded().catch(err => console.error('Initial cache cleanup failed:', err));
 
 initializeContentScript();

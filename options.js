@@ -39,6 +39,10 @@ document.addEventListener('DOMContentLoaded', () => {
       systemPrompt: "Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.",
       userPrompt: "Rewrite the headline, based on the article, with these rules:\n\n- Robotic, factual, no clickbait\n- Summarize the key point of the article\n- Be objective and informative\n Keep the original headline length and language"
     },
+    clean: {
+      systemPrompt: "You are a guardian of ethical and family-friendly speech according to Jewish laws of Lashon Hara (evil speech). You rewrite headlines to remove gossip, slander, negativity about individuals, harmful speech, profanity, swear words, violence, sexual content, and any content inappropriate for all ages. Focus on constructive, respectful, and clean language that avoids speaking negatively about people. Even don't write any name of person, just generalize it. Still make the headline informative and summarizing the main point of the article, while adhering to these ethical guidelines.",
+      userPrompt: "Rewrite this headline according to Jewish laws against Lashon Hara (evil speech) and remove all inappropriate content. Remove:\n- Gossip, slander, or negative speech about individuals\n- Profanity and swear words\n- Violent or graphic descriptions\n- Sexual content or references\n- Any content not suitable for all ages\n\nFocus only on essential facts presented respectfully and appropriately. If the article contains only inappropriate content with no constructive value, note that it violates speech ethics.\n\nYour answer must be in the original headline length and in the article language."
+    },
     custom: {
       systemPrompt: "",
       userPrompt: ""
@@ -92,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let ipu = false;
 
   // Load saved settings
-  chrome.storage.sync.get(['apiProvider', 'apiKey', 'customPrompt', 'systemPrompt', 'characterMode', 'modifiedPrompts', 'premium', 'preferedLang'], (data) => {
+  chrome.storage.sync.get(['apiProvider', 'apiKey', 'customPrompt', 'systemPrompt', 'characterMode', 'modifiedPrompts', 'premium', 'preferedLang', 'autoReplaceHeadlines'], (data) => {
     ipu = !!data.premium;
     updatePremiumUI(ipu);
     if (data.preferedLang) {
@@ -159,6 +163,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Update character counters
     updateCharCounter(systemPrompt, systemPromptCounter, 1000);
     updateCharCounter(customPrompt, customPromptCounter, 800);
+
+    // Load auto-replace setting
+    const autoReplaceCheckbox = document.getElementById('autoReplaceHeadlines');
+    if (autoReplaceCheckbox) {
+      autoReplaceCheckbox.checked = (typeof data.autoReplaceHeadlines === 'boolean') ? data.autoReplaceHeadlines : false;
+    }
   });
 
   // Check premium status and update UI accordingly
@@ -173,9 +183,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const customPromptTextarea = document.getElementById('customPrompt');
     const customPromptCounter = document.getElementById('customPromptCounter');
     
+    const autoReplaceSection = document.getElementById('autoReplaceSection');
     if (ipb) {
       // Premium user - show everything
       characterModesContainer.classList.add('premium-unlocked');
+      if (autoReplaceSection) autoReplaceSection.style.display = 'flex';
       document.querySelectorAll('.premium-mode').forEach(mode => {
         mode.classList.remove('premium-mode');
         mode.removeAttribute('data-premium');
@@ -191,6 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       // Non-premium user - hide custom prompts
       characterModesContainer.classList.remove('premium-unlocked');
+      if (autoReplaceSection) autoReplaceSection.style.display = 'none';
       
       // Hide custom prompt fields
       if (systemPromptLabel) systemPromptLabel.style.display = 'none';
@@ -220,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const clickedMode = mode.dataset.mode;
       
       // Check if free user trying to use premium mode
-      if (!ipu && clickedMode !== 'robot') {
+      if (!ipu && clickedMode !== 'robot' && clickedMode !== 'clean') {
         // Redirect to premium purchase
         window.open("https://tsurdan.github.io/Just-News/premium.html");
         return;
@@ -410,6 +423,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Get the default model for the selected provider
     const selectedModel = defaultModels[apiProvider.value];
     
+    const autoReplaceCheckbox = document.getElementById('autoReplaceHeadlines');
     chrome.storage.sync.set({
       apiProvider: apiProvider.value,
       apiKey: keyToSave,
@@ -418,7 +432,8 @@ document.addEventListener('DOMContentLoaded', () => {
       systemPrompt: systemPrompt.value,
       characterMode: currentCharacterMode,
       modifiedPrompts: modifiedPrompts,
-      preferedLang: preferedLang.value
+      preferedLang: preferedLang.value,
+      autoReplaceHeadlines: autoReplaceCheckbox ? autoReplaceCheckbox.checked : false
     }, () => {
       status.textContent = 'Saved!';
       status.style.color = '#4285F4';

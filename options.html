@@ -227,7 +227,7 @@
     /* Modern Character Modes Layout */
     #characterModes {
       display: grid;
-      grid-template-columns: 120px 1fr;
+      grid-template-columns: 120px 120px 1fr;
       gap: 16px;
       margin: 8px 0 12px 0;
       padding: 0;
@@ -284,11 +284,62 @@
       color: white;
     }
 
+    /* Free Clean Mode Styling */
+    .character-mode[data-mode="clean"] {
+      background: white;
+      border: 2px solid transparent;
+      border-radius: 12px;
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .character-mode[data-mode="clean"]:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+      background: #f8f9ff;
+    }
+
+    .character-mode[data-mode="clean"].selected {
+      background: #4285F4;
+      border-color: transparent;
+      box-shadow: 0 8px 20px rgba(66, 133, 244, 0.4);
+      transform: translateY(-2px);
+    }
+
+    .character-mode[data-mode="clean"] .character-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 8px;
+      transition: all 0.3s ease;
+      filter: none;
+    }
+
+    .character-mode[data-mode="clean"].selected .character-icon {
+      filter: brightness(0) invert(1);
+    }
+
+    .character-mode[data-mode="clean"] .character-name {
+      color: #333;
+      font-weight: 600;
+      font-size: 0.8em;
+      transition: all 0.3s ease;
+    }
+
+    .character-mode[data-mode="clean"].selected .character-name {
+      color: white;
+    }
+
     /* Premium Modes Container */
     .premium-modes-container {
       position: relative;
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(2, 1fr);
       gap: 2px;
       background: linear-gradient(135deg, 
         #8A2BE2 0%,
@@ -370,7 +421,7 @@
     }
 
     /* Premium Character Mode Styling */
-    .character-mode:not([data-mode="robot"]) {
+    .character-mode:not([data-mode="robot"]):not([data-mode="clean"]) {
       position: relative;
       display: flex;
       flex-direction: column;
@@ -396,7 +447,7 @@
       border-bottom-right-radius: 10px;
     }
 
-    .character-mode:not([data-mode="robot"]) .character-icon {
+    .character-mode:not([data-mode="robot"]):not([data-mode="clean"]) .character-icon {
       width: 40px;
       height: 40px;
       margin-bottom: 8px;
@@ -405,7 +456,7 @@
       transition: all 0.3s ease;
     }
 
-    .character-mode:not([data-mode="robot"]) .character-name {
+    .character-mode:not([data-mode="robot"]):not([data-mode="clean"]) .character-name {
       color: white;
       font-weight: 600;
       font-size: 0.8em;
@@ -413,11 +464,11 @@
     }
 
     /* Premium Hover Effects */
-    .character-mode:not([data-mode="robot"]):hover {
+    .character-mode:not([data-mode="robot"]):not([data-mode="clean"]):hover {
       background: rgba(255, 255, 255, 0.15);
     }
 
-    .character-mode:not([data-mode="robot"]):hover .character-icon {
+    .character-mode:not([data-mode="robot"]):not([data-mode="clean"]):hover .character-icon {
       transform: scale(1.1);
       opacity: 1;
     }
@@ -436,30 +487,30 @@
       display: none;
     }
 
-    .premium-unlocked .character-mode:not([data-mode="robot"]) {
+    .premium-unlocked .character-mode:not([data-mode="robot"]):not([data-mode="clean"]) {
       background: white;
       box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
       border-radius: 12px;
       margin: 2px;
     }
 
-    .premium-unlocked .character-mode:not([data-mode="robot"]) .character-icon {
+    .premium-unlocked .character-mode:not([data-mode="robot"]):not([data-mode="clean"]) .character-icon {
       filter: none;
       opacity: 1;
     }
 
-    .premium-unlocked .character-mode:not([data-mode="robot"]) .character-name {
+    .premium-unlocked .character-mode:not([data-mode="robot"]):not([data-mode="clean"]) .character-name {
       color: #333;
       text-shadow: none;
     }
 
-    .premium-unlocked .character-mode:not([data-mode="robot"]):hover {
+    .premium-unlocked .character-mode:not([data-mode="robot"]):not([data-mode="clean"]):hover {
       transform: translateY(-2px);
       box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
       background: #f8f9ff;
     }
 
-    .premium-unlocked .character-mode:not([data-mode="robot"]).selected {
+    .premium-unlocked .character-mode:not([data-mode="robot"]):not([data-mode="clean"]).selected {
       background: #4285F4;
       color: white;
     }
@@ -575,10 +626,14 @@
     </div>
     <label for="characterMode">Character Mode:</label>
     <div id="characterModes">
-      <!-- Free Mode -->
+      <!-- Free Modes -->
       <div class="character-mode" data-mode="robot">
         <img src="more icons/robot.png" alt="Robot" class="character-icon">
         <span class="character-name">Robot</span>
+      </div>
+      <div class="character-mode" data-mode="clean">
+        <img src="more icons/clean.png" alt="Clean" class="character-icon">
+        <span class="character-name">Clean</span>
       </div>
       
       <!-- Premium Modes Container -->
@@ -607,6 +662,12 @@
     <label for="customPrompt">Prompt:</label>
     <textarea id="customPrompt" rows="4" placeholder="Enter your custom prompt here." maxlength="800"></textarea>
     <div class="char-counter" id="customPromptCounter">0/800</div>
+
+    <!-- Auto Replace Toggle (Premium Only) -->
+    <div id="autoReplaceSection" style="display: none; align-items: center; gap: 10px; margin-bottom: 12px;">
+      <label for="autoReplaceHeadlines" style="margin: 0; white-space: nowrap; font-weight: 600; color: #4285F4;">Automatically replace headlines on page load:</label>
+      <input type="checkbox" id="autoReplaceHeadlines" style="margin-right: 8px; vertical-align: middle;">
+    </div>
 
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 16px;">
       <label for="preferedLang" style="margin: 0; white-space: nowrap;">Preferred Output Language:</label>
