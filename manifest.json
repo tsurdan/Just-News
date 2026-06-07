@@ -1,4 +1,4 @@
-{
+﻿{
   "manifest_version": 3,
   "name": "Just News",
   "version": "3.0.6",
@@ -145,6 +145,19 @@
     "page": "options.html",
     "open_in_tab": true
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "more-icons/robot.png",
+        "more-icons/clean.png",
+        "more-icons/cynic.png",
+        "more-icons/optimist.png",
+        "more-icons/conspirator.png",
+        "more-icons/custom.png"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "just-news@example.com",

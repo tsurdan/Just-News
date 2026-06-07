@@ -1,4 +1,4 @@
-// Cache configuration
+﻿// Cache configuration
 const CACHE_PREFIX = 'justnews_cache_';
 const CACHE_TTL_DAYS = 1; // Cache expires after 1 day
 const MAX_CACHE_ENTRIES = 500; // Limit cache size to prevent storage bloat
@@ -144,17 +144,47 @@ async function cleanupCacheIfNeeded() {
 
 // Detect if we're on an article page
 function isArticlePage() {
+  // Check URL patterns that indicate article pages
+  const url = window.location.href;
+  const path = window.location.pathname;
+  
+  // Exclude known homepage patterns
+  if (path === '/' || path === '' || path === '/index.html') return false;
+  
+  // Check for article-specific meta tags
+  const ogType = document.querySelector('meta[property="og:type"]');
+  if (ogType && ogType.content === 'article') return true;
+  
+  // Check for article schema
+  const articleSchema = document.querySelector('[itemtype*="Article"], [itemtype*="NewsArticle"], [itemtype*="BlogPosting"]');
+  if (articleSchema) return true;
+  
+  // Check for article-specific containers
+  const articleContainer = document.querySelector('article.post, article.entry, article[role="article"], .article-body, .story-body, .post-content, .entry-content');
+  if (articleContainer) {
+    // Make sure it has substantial content (not just a card/teaser)
+    const text = articleContainer.textContent.trim();
+    if (text.length > 1000) return true;
+  }
+  
+  // Fallback heuristic: exactly one h1 + many paragraphs with substantial text
   const h1Tags = document.querySelectorAll('h1');
-  const paragraphs = document.querySelectorAll('p');
+  const paragraphs = document.querySelectorAll('article p, [role="article"] p, .article-content p, .post-content p, .entry-content p, .story-body p');
   
   if (h1Tags.length !== 1) return false;
-  if (paragraphs.length < 3) return false;
+  if (paragraphs.length < 5) return false;
   
   const paragraphText = Array.from(paragraphs)
     .map(p => p.textContent.trim())
     .join(' ');
   
-  if (paragraphText.length < 500) return false;
+  if (paragraphText.length < 1500) return false;
+  
+  // Check that there aren't too many links (homepage indicator)
+  const links = document.querySelectorAll('a[href]');
+  const h2s = document.querySelectorAll('h2, h3');
+  // Homepages typically have many headline links relative to content
+  if (h2s.length > 10 && links.length > 50) return false;
   
   return true;
 }
@@ -407,20 +437,21 @@ async function summarizeArticleHeadline() {
 - Be objective and informative`;
 
   try {
-    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang']);
+    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang', 'characterMode']);
     apiKey = settings.apiKey || "";
     apiProvider = settings.apiProvider || "groq";
     model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     preferedLang = settings.preferedLang || "english";
+    var characterMode = settings.characterMode || "robot";
     if (!apiKey) return; // No API key, skip article headline
   } catch (error) {
     return;
   }
   
   const articleUrl = window.location.href;
-  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang};
+  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "characterMode": characterMode};
   
   const headlineData = extractArticleHeadline();
   if (!headlineData) return;
@@ -436,8 +467,9 @@ async function summarizeArticleHeadline() {
   const cached = await getCachedHeadline(articleUrl, sourceHeadline, apiOptions);
   if (cached) {
     typeHeadline(headlineElement, `~${cached.newHeadline}`, true);
-    if (ipb() && cached.summary) {
+    if (cached.summary) {
       articleSummaries.set(articleUrl, cached.summary);
+      showArticleSummaryPanel(cached.summary);
     }
     chrome.runtime.sendMessage({ action: 'headlineChanged' });
     return;
@@ -451,13 +483,174 @@ async function summarizeArticleHeadline() {
     
     typeHeadline(headlineElement, `~${newHeadline}`, false);
     
-    if (ipb() && articleSummary) {
+    if (articleSummary) {
       articleSummaries.set(articleUrl, articleSummary);
+      showArticleSummaryPanel(articleSummary);
     }
     
     chrome.runtime.sendMessage({ action: 'headlineChanged' });
   } catch (error) {
     // Silently skip errors for article headlines
+  }
+}
+
+// Show article summary prominently by replacing article body
+function showArticleSummaryPanel(summaryText) {
+  if (!summaryText || summaryText === 'Summary unavailable') return;
+  if (document.querySelector('.just-news-summary-panel')) return; // Already shown
+  
+  // Find the article content container
+  const articleSelectors = [
+    'article',
+    '[role="article"]',
+    '.article-content',
+    '.post-content',
+    '.entry-content',
+    '.story-body',
+    'main',
+  ];
+  
+  let articleContainer = null;
+  for (const selector of articleSelectors) {
+    articleContainer = document.querySelector(selector);
+    if (articleContainer) break;
+  }
+  
+  if (!articleContainer) return;
+  
+  // Find the paragraph content within the article (skip the headline)
+  const paragraphs = articleContainer.querySelectorAll('p');
+  if (paragraphs.length < 2) return;
+  
+  // Create the panel
+  const panel = document.createElement('div');
+  panel.className = 'just-news-summary-panel';
+  panel.style.cssText = `
+    background: white;
+    border: 1px solid #e0e0e0;
+    border-radius: 12px;
+    margin: 16px 0;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+    overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  `;
+  
+  // Tab bar
+  const tabBar = document.createElement('div');
+  tabBar.style.cssText = `
+    display: flex;
+    border-bottom: 1px solid #e0e0e0;
+    background: #fafafa;
+  `;
+  
+  const tabSummary = document.createElement('button');
+  tabSummary.textContent = 'AI Summary';
+  tabSummary.style.cssText = `
+    flex: 1;
+    padding: 12px 16px;
+    border: none;
+    outline: none;
+    background: white;
+    font-size: 14px;
+    font-weight: 600;
+    color: #4285F4;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 3px solid #4285F4;
+    font-family: inherit;
+  `;
+  
+  const tabOriginal = document.createElement('button');
+  tabOriginal.textContent = 'Original Article';
+  tabOriginal.style.cssText = `
+    flex: 1;
+    padding: 12px 16px;
+    border: none;
+    outline: none;
+    background: #fafafa;
+    font-size: 14px;
+    font-weight: 600;
+    color: #888;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border-bottom: 3px solid transparent;
+    font-family: inherit;
+  `;
+  
+  tabBar.appendChild(tabSummary);
+  tabBar.appendChild(tabOriginal);
+  
+  // Content area
+  const contentArea = document.createElement('div');
+  contentArea.style.cssText = `
+    padding: 24px;
+    min-height: 100px;
+  `;
+  
+  const summaryContent = document.createElement('p');
+  summaryContent.style.cssText = `
+    font-size: 16px;
+    line-height: 1.7;
+    color: #333;
+    margin: 0;
+    font-weight: 400;
+  `;
+  summaryContent.textContent = summaryText;
+  contentArea.appendChild(summaryContent);
+  
+  panel.appendChild(tabBar);
+  panel.appendChild(contentArea);
+  
+  // Hide all article content (paragraphs, images, figures, videos, etc.)
+  const hiddenElements = [];
+  const allContent = articleContainer.querySelectorAll('p, img, figure, figcaption, picture, video, iframe, .image, .media, blockquote, ul, ol, table, [class*="video"], [class*="player"], [class*="embed"], object, embed, audio, aside, [class*="Video"], [class*="Player"]');
+  allContent.forEach(el => {
+    // Don't hide the h1 headline or our own panel
+    if (el.tagName === 'H1' || el.closest('.just-news-summary-panel')) return;
+    // Don't hide elements outside the article flow
+    if (el.closest('nav') || el.closest('header') || el.closest('footer')) return;
+    hiddenElements.push({ el: el, origDisplay: el.style.display });
+    el.style.display = 'none';
+  });
+  
+  let showingSummary = true;
+  
+  tabSummary.onclick = () => {
+    if (showingSummary) return;
+    showingSummary = true;
+    // Activate summary tab
+    tabSummary.style.background = 'white';
+    tabSummary.style.color = '#4285F4';
+    tabSummary.style.borderBottom = '3px solid #4285F4';
+    tabOriginal.style.background = '#fafafa';
+    tabOriginal.style.color = '#888';
+    tabOriginal.style.borderBottom = '3px solid transparent';
+    // Show summary, hide original
+    contentArea.style.display = '';
+    hiddenElements.forEach(item => item.el.style.display = 'none');
+  };
+  
+  tabOriginal.onclick = () => {
+    if (!showingSummary) return;
+    showingSummary = false;
+    // Activate original tab
+    tabOriginal.style.background = 'white';
+    tabOriginal.style.color = '#4285F4';
+    tabOriginal.style.borderBottom = '3px solid #4285F4';
+    tabSummary.style.background = '#fafafa';
+    tabSummary.style.color = '#888';
+    tabSummary.style.borderBottom = '3px solid transparent';
+    // Hide summary, show original
+    contentArea.style.display = 'none';
+    hiddenElements.forEach(item => item.el.style.display = item.origDisplay || '');
+  };
+  
+  // Insert the panel after the headline (first h1)
+  const h1 = articleContainer.querySelector('h1');
+  if (h1 && h1.parentNode) {
+    h1.parentNode.insertBefore(panel, h1.nextSibling);
+  } else {
+    articleContainer.insertBefore(panel, articleContainer.firstChild);
   }
 }
 
@@ -478,13 +671,14 @@ async function summarizeHomepageHeadlines(isArticle = false) {
 - Be objective and informative`;
 
   try {
-    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang']);
+    const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang', 'characterMode']);
     apiKey = settings.apiKey || "";
     apiProvider = settings.apiProvider || "groq";
     model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     preferedLang = settings.preferedLang || "english";
+    var characterMode = settings.characterMode || "robot";
     if (!apiKey) {
       if (!isAutomaticProcessing) {
         await promptForApiKey('Enter key (one-time setup)');
@@ -497,7 +691,7 @@ async function summarizeHomepageHeadlines(isArticle = false) {
     }
     return;
   }
-  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang}; 
+  const apiOptions = {"apiKey": apiKey, "apiProvider": apiProvider, "model": model, "customPrompt": customPrompt, "systemPrompt": systemPrompt, "preferedLang": preferedLang, "characterMode": characterMode}; 
   
   // Check daily rate limit with background script
   if (!ipb()) {
@@ -667,7 +861,8 @@ async function summarizeHomepageHeadlines(isArticle = false) {
       rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
     }
     
-    if (isAutomaticProcessing) return;
+    // Don't show error notifications on article pages or during auto-processing
+    if (isAutomaticProcessing || isArticle) return;
     
     let minRetryAfter = null;
     hasRateLimit = false;
@@ -1123,7 +1318,11 @@ async function fetchContent(url) {
 }
 
 async function summarizeContnet(sourceHeadline, content, options) {
-  const { apiKey, apiProvider, model, customPrompt, systemPrompt, preferedLang } = options;
+  const { apiKey, apiProvider, model, customPrompt, systemPrompt, preferedLang, characterMode } = options;
+  
+  const summaryInstruction = characterMode === 'clean'
+    ? '<2-3 sentence summary of the article that follows the same clean speech rules - no names, no negativity, no inappropriate content, but still informative with key facts>'
+    : '<2-3 sentence objective summary of the article>';
   
   const systemInstructions = `
 
@@ -1131,7 +1330,7 @@ Original: ${sourceHeadline}
 Article: ${content}
 
 IMPORTANT: You must return your response in this exact JSON format:
-{"new_headline": "<your rewritten headline>", "article_summary": "<2-3 sentence objective summary of the article>"}
+{"new_headline": "<your rewritten headline>", "article_summary": "${summaryInstruction}"}
 
 Do not add any text before or after the JSON. Only return the JSON object.`;
 
@@ -1194,8 +1393,18 @@ function createApiKeyPrompt(message, currentKey = '') {
     text-align: left;
   `;
 
+  const stepIndicator = document.createElement('div');
+  stepIndicator.style.cssText = `
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+  `;
+  stepIndicator.textContent = 'STEP 1 OF 2';
+
   const title = document.createElement('h3');
-  title.textContent = '\u{1F680} Quick Free Setup Required';
+  title.textContent = 'Connect Your AI Provider';
   title.style.cssText = `
     text-align: center;
     font-size: 18px;
@@ -1409,6 +1618,7 @@ function createApiKeyPrompt(message, currentKey = '') {
   buttonContainer.appendChild(submitButton);
   buttonContainer.appendChild(cancelButton);
   
+  promptBox.appendChild(stepIndicator);
   promptBox.appendChild(title);
   promptBox.appendChild(stepsContainer);
   promptBox.appendChild(inputLabel);
@@ -1425,18 +1635,6 @@ function createApiKeyPrompt(message, currentKey = '') {
     }
   `;
   document.head.appendChild(style);
-
-  submitButton.addEventListener('click', () => {
-    chrome.storage.sync.set({ apiKey: input.value }, () => {
-      overlay.remove();
-      style.remove();
-    });
-  });
-
-  cancelButton.addEventListener('click', () => {
-    overlay.remove();
-    style.remove();
-  });
 
   return { overlay, input, submitButton, cancelButton };
 }
@@ -1597,8 +1795,11 @@ async function promptForApiKey(message, currentKey = '') {
       const apiKey = input.value.trim();
       if (apiKey) {
         await chrome.storage.sync.set({ apiKey });
-        summarizeHeadlines();
-        resolve(apiKey);
+        // Show step 2: mode selection
+        showModeSelectionStep(overlay, () => {
+          summarizeHeadlines();
+          resolve(apiKey);
+        });
       } else {
         input.style.border = '1px solid red';
       }
@@ -1611,6 +1812,188 @@ async function promptForApiKey(message, currentKey = '') {
       resolve(null);
     };
   });
+}
+
+// Step 2: Mode selection after API key is saved
+function showModeSelectionStep(overlay, onComplete) {
+  // Clear the overlay content - find the direct child promptBox
+  const promptBox = overlay.firstElementChild;
+  if (!promptBox) return;
+  promptBox.innerHTML = '';
+  promptBox.style.animation = 'slideIn 0.3s ease';
+  promptBox.style.maxWidth = '480px';
+
+  const stepIndicator = document.createElement('div');
+  stepIndicator.style.cssText = `
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 8px;
+    letter-spacing: 0.5px;
+  `;
+  stepIndicator.textContent = 'STEP 2 OF 2';
+
+  const title = document.createElement('h3');
+  title.textContent = 'Choose Your Mode';
+  title.style.cssText = `
+    text-align: center;
+    font-size: 18px;
+    color: #333;
+    font-weight: 700;
+    margin-bottom: 8px;
+    line-height: 1.3;
+  `;
+
+  const subtitle = document.createElement('p');
+  subtitle.textContent = 'How should your headlines be rewritten?';
+  subtitle.style.cssText = `
+    text-align: center;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 20px;
+  `;
+
+  const modesContainer = document.createElement('div');
+  modesContainer.style.cssText = `
+    display: flex;
+    gap: 16px;
+    justify-content: center;
+    margin-bottom: 20px;
+  `;
+
+  const modes = [
+    { id: 'robot', name: 'Robot', desc: 'Factual & objective', icon: 'robot' },
+    { id: 'clean', name: 'Clean', desc: 'Family-friendly & ethical', icon: 'clean' }
+  ];
+
+  let selectedMode = 'robot';
+
+  modes.forEach(mode => {
+    const modeCard = document.createElement('div');
+    modeCard.style.cssText = `
+      flex: 1;
+      max-width: 180px;
+      padding: 20px 16px;
+      border-radius: 12px;
+      border: 2px solid ${mode.id === 'robot' ? '#4285F4' : '#e0e0e0'};
+      background: ${mode.id === 'robot' ? '#f0f4ff' : 'white'};
+      cursor: pointer;
+      transition: all 0.2s ease;
+      text-align: center;
+      box-shadow: ${mode.id === 'robot' ? '0 4px 12px rgba(66, 133, 244, 0.2)' : '0 2px 8px rgba(0,0,0,0.05)'};
+    `;
+
+    const iconImg = document.createElement('img');
+    iconImg.src = chrome.runtime.getURL('more-icons/' + mode.icon + '.png');
+    iconImg.style.cssText = 'width: 44px; height: 44px; margin: 0 auto 8px auto; display: block;';
+    iconImg.alt = mode.name;
+    iconImg.onerror = () => { iconImg.style.display = 'none'; };
+    const nameDiv = document.createElement('div');
+    nameDiv.style.cssText = 'font-weight: 600; font-size: 15px; color: #333; margin-bottom: 4px;';
+    nameDiv.textContent = mode.name;
+    const descDiv = document.createElement('div');
+    descDiv.style.cssText = 'font-size: 12px; color: #666;';
+    descDiv.textContent = mode.desc;
+    modeCard.appendChild(iconImg);
+    modeCard.appendChild(nameDiv);
+    modeCard.appendChild(descDiv);
+
+    modeCard.onmouseover = () => {
+      if (selectedMode !== mode.id) {
+        modeCard.style.borderColor = '#4285F4';
+        modeCard.style.transform = 'translateY(-2px)';
+      }
+    };
+    modeCard.onmouseout = () => {
+      if (selectedMode !== mode.id) {
+        modeCard.style.borderColor = '#e0e0e0';
+        modeCard.style.transform = 'translateY(0)';
+      }
+    };
+
+    modeCard.onclick = () => {
+      selectedMode = mode.id;
+      // Update all cards
+      modesContainer.querySelectorAll('div[data-mode]').forEach(card => {
+        card.style.borderColor = '#e0e0e0';
+        card.style.background = 'white';
+        card.style.boxShadow = '0 2px 8px rgba(0,0,0,0.05)';
+      });
+      modeCard.style.borderColor = '#4285F4';
+      modeCard.style.background = '#f0f4ff';
+      modeCard.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.2)';
+    };
+
+    modeCard.setAttribute('data-mode', mode.id);
+    modesContainer.appendChild(modeCard);
+  });
+
+  const premiumHint = document.createElement('p');
+  premiumHint.innerHTML = 'More modes available with <a href="https://tsurdan.github.io/Just-News/premium.html" target="_blank" style="color: #58CC02; font-weight: 600; text-decoration: none;">Premium</a>';
+  premiumHint.style.cssText = `
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    margin-bottom: 20px;
+  `;
+
+  const doneButton = document.createElement('button');
+  doneButton.textContent = "Let's Go!";
+  doneButton.style.cssText = `
+    display: block;
+    width: 100%;
+    background: #4285F4;
+    color: white;
+    border: none;
+    padding: 14px 24px;
+    border-radius: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  `;
+
+  doneButton.onmouseover = () => {
+    doneButton.style.background = '#1a73e8';
+    doneButton.style.transform = 'translateY(-1px)';
+    doneButton.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.3)';
+  };
+  doneButton.onmouseout = () => {
+    doneButton.style.background = '#4285F4';
+    doneButton.style.transform = 'translateY(0)';
+    doneButton.style.boxShadow = 'none';
+  };
+
+  doneButton.onclick = async () => {
+    // Save mode and its corresponding prompts
+    const modePrompts = {
+      robot: {
+        systemPrompt: "Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.",
+        customPrompt: "Rewrite the headline, based on the article, with these rules:\n\n- Robotic, factual, no clickbait\n- Summarize the key point of the article\n- Be objective and informative\n Keep the original headline length and language"
+      },
+      clean: {
+        systemPrompt: "You are a guardian of ethical and family-friendly speech according to Jewish laws of Lashon Hara (evil speech). You rewrite headlines to remove gossip, slander, negativity about individuals, harmful speech, profanity, swear words, violence, sexual content, and any content inappropriate for all ages. Focus on constructive, respectful, and clean language that avoids speaking negatively about people. Even don't write any name of person, just generalize it. Still make the headline informative and summarizing the main point of the article and facts, informative no clickbate, while adhering to these ethical guidelines.",
+        customPrompt: "Rewrite this headline according to Jewish laws against Lashon Hara (evil speech) and remove all inappropriate content. Remove:\n- Gossip, slander, or negative speech about individuals\n- Profanity and swear words\n- Violent or graphic descriptions\n- Sexual content or references\n- Any content not suitable for all ages\n\nFocus only on essential facts presented respectfully and appropriately, informative no clickbate. If the article contains only inappropriate content with no constructive value, note that it violates speech ethics.\n\nYour answer must be in the original headline length and in the article language."
+      }
+    };
+    const prompts = modePrompts[selectedMode] || modePrompts.robot;
+    await chrome.storage.sync.set({
+      characterMode: selectedMode,
+      systemPrompt: prompts.systemPrompt,
+      customPrompt: prompts.customPrompt
+    });
+    try {
+      overlay.remove();
+    } catch (e) {}
+    onComplete();
+  };
+
+  promptBox.appendChild(stepIndicator);
+  promptBox.appendChild(title);
+  promptBox.appendChild(subtitle);
+  promptBox.appendChild(modesContainer);
+  promptBox.appendChild(premiumHint);
+  promptBox.appendChild(doneButton);
 }
 
 async function createNotification(message) {
