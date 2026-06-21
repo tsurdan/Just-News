@@ -151,6 +151,7 @@
   "web_accessible_resources": [
     {
       "resources": [
+        "icons/icon48.png",
         "more-icons/robot.png",
         "more-icons/clean.png",
         "more-icons/cynic.png",

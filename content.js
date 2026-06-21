@@ -357,6 +357,15 @@ async function initializeContentScript() {
         setTimeout(() => summarizeHeadlines(), 500);
       }
       setupScrollListener();
+    } else {
+      // Premium user with auto-replace off - remind them (once per day)
+      checkAndShowReminderToast();
+    }
+  } else {
+    // Non-premium user with API key - remind them (once per day)
+    const { apiKey } = await chrome.storage.sync.get('apiKey');
+    if (apiKey) {
+      checkAndShowReminderToast();
     }
   }
   
@@ -492,6 +501,12 @@ async function summarizeArticleHeadline() {
     return;
   }
   
+  // Check daily rate limit for free users
+  if (!ipb()) {
+    const limitCheck = await chrome.runtime.sendMessage({ action: 'checkDailyLimit' });
+    if (!limitCheck.canProceed) return;
+  }
+  
   try {
     const summary = await summarizeContnet(sourceHeadline, content, apiOptions);
     const { headline: newHeadline, summary: articleSummary } = parseAIResponse(summary);
@@ -503,6 +518,10 @@ async function summarizeArticleHeadline() {
     if (articleSummary) {
       articleSummaries.set(articleUrl, articleSummary);
       showArticleSummaryPanel(articleSummary);
+    }
+    
+    if (!ipb()) {
+      chrome.runtime.sendMessage({ action: 'incrementDailyCount' }, (usage) => {});
     }
     
     chrome.runtime.sendMessage({ action: 'headlineChanged' });
@@ -868,6 +887,11 @@ async function summarizeHomepageHeadlines(isArticle = false) {
   const results = await Promise.allSettled(promises);
   const succes = results.filter(result => result.status === 'fulfilled');  
   const errors = results.filter(result => result.status === 'rejected');
+  
+  // Show Lashon Hara learning suggestion for clean mode users on Hebrew sites
+  if (succes.length > 0 && apiOptions.characterMode === 'clean' && window.location.hostname.endsWith('.co.il')) {
+    checkAndShowLashonHaraToast();
+  }
   
   if (succes.length === 0 && errors.length > 0) {
     // Set rate limit cooldown
@@ -1662,6 +1686,204 @@ function createApiKeyPrompt(message, currentKey = '') {
   document.head.appendChild(style);
 
   return { overlay, input, submitButton, cancelButton };
+}
+
+// Check if we should show Lashon Hara learning toast (once ever)
+async function checkAndShowLashonHaraToast() {
+  try {
+    const { lashonHaraToastShown, cleanModeUseCount } = await chrome.storage.local.get(['lashonHaraToastShown', 'cleanModeUseCount']);
+    if (lashonHaraToastShown) return;
+    
+    const newCount = (cleanModeUseCount || 0) + 1;
+    await chrome.storage.local.set({ cleanModeUseCount: newCount });
+    
+    if (newCount >= 3) {
+      await chrome.storage.local.set({ lashonHaraToastShown: true });
+      showLashonHaraToast();
+    }
+  } catch (error) {
+    // Silently ignore
+  }
+}
+
+function showLashonHaraToast() {
+  const host = document.createElement('div');
+  host.style.cssText = `
+    position: fixed !important;
+    top: 4px !important;
+    right: 20px !important;
+    z-index: 2147483646 !important;
+    pointer-events: auto !important;
+  `;
+  
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: white;
+    color: #333;
+    padding: 12px 16px;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: all 0.3s ease;
+    border-left: 4px solid #4285F4;
+    max-width: 380px;
+    direction: rtl;
+  `;
+  
+  const icon = document.createElement('img');
+  icon.src = chrome.runtime.getURL('icons/icon48.png');
+  icon.style.cssText = 'width: 24px; height: 24px; border-radius: 4px;';
+  
+  const text = document.createElement('span');
+  text.style.cssText = 'flex: 1; line-height: 1.6;';
+  text.innerHTML = '\u05E8\u05D5\u05E6\u05D4 \u05DC\u05D4\u05E8\u05D7\u05D9\u05D1 \u05D0\u05EA \u05D4\u05D9\u05D3\u05E2 \u05E9\u05DC\u05DA \u05D1\u05D4\u05DC\u05DB\u05D5\u05EA \u05DC\u05E9\u05D5\u05DF \u05D4\u05E8\u05E2 \u05D5\u05E8\u05DB\u05D9\u05DC\u05D5\u05EA? \u05D9\u05DB\u05D5\u05DC \u05DC\u05E2\u05D9\u05D9\u05DF <a href="https://www.makorrishon.co.il/lashon" target="_blank" style="color: #4285F4; text-decoration: underline;">\u05DB\u05D0\u05DF</a>';
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '&times;';
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 0 0 8px;
+    line-height: 1;
+  `;
+  closeBtn.onmouseover = () => closeBtn.style.color = '#666';
+  closeBtn.onmouseout = () => closeBtn.style.color = '#999';
+  
+  toast.appendChild(closeBtn);
+  toast.appendChild(text);
+  toast.appendChild(icon);
+  host.appendChild(toast);
+  document.body.appendChild(host);
+  
+  setTimeout(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  }, 100);
+  
+  const autoHideTimeout = setTimeout(() => {
+    hideToast();
+  }, 10000);
+  
+  closeBtn.onclick = () => {
+    clearTimeout(autoHideTimeout);
+    hideToast();
+  };
+  
+  function hideToast() {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-20px)';
+    setTimeout(() => {
+      host.remove();
+    }, 300);
+  }
+}
+
+// Check if we should show the reminder toast (once per day)
+async function checkAndShowReminderToast() {
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  
+  try {
+    const { lastReminderToastShown } = await chrome.storage.local.get('lastReminderToastShown');
+    const now = Date.now();
+    
+    if (!lastReminderToastShown || (now - lastReminderToastShown) > ONE_DAY_MS) {
+      await chrome.storage.local.set({ lastReminderToastShown: now });
+      showReminderToast();
+    }
+  } catch (error) {
+    showReminderToast();
+  }
+}
+
+// Show a small, non-intrusive toast reminder
+function showReminderToast() {
+  const host = document.createElement('div');
+  host.className = 'just-news-toast-host';
+  host.style.cssText = `
+    position: fixed !important;
+    top: 4px !important;
+    right: 20px !important;
+    z-index: 2147483646 !important;
+    pointer-events: auto !important;
+  `;
+  
+  const toast = document.createElement('div');
+  toast.style.cssText = `
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: white;
+    color: #333;
+    padding: 12px 16px;
+    border-radius: 10px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    opacity: 0;
+    transform: translateY(-20px);
+    transition: all 0.3s ease;
+    border-left: 4px solid #4285F4;
+    max-width: 300px;
+  `;
+  
+  const icon = document.createElement('img');
+  icon.src = chrome.runtime.getURL('icons/icon48.png');
+  icon.style.cssText = 'width: 24px; height: 24px; border-radius: 4px;';
+  
+  const text = document.createElement('span');
+  text.textContent = 'Click the Just News icon to transform headlines';
+  text.style.cssText = 'flex: 1; line-height: 1.4;';
+  
+  const closeBtn = document.createElement('button');
+  closeBtn.innerHTML = '&times;';
+  closeBtn.style.cssText = `
+    background: none;
+    border: none;
+    color: #999;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 0 0 8px;
+    line-height: 1;
+  `;
+  closeBtn.onmouseover = () => closeBtn.style.color = '#666';
+  closeBtn.onmouseout = () => closeBtn.style.color = '#999';
+  
+  toast.appendChild(icon);
+  toast.appendChild(text);
+  toast.appendChild(closeBtn);
+  host.appendChild(toast);
+  document.body.appendChild(host);
+  
+  setTimeout(() => {
+    toast.style.opacity = '1';
+    toast.style.transform = 'translateY(0)';
+  }, 100);
+  
+  const autoHideTimeout = setTimeout(() => {
+    hideToast();
+  }, 6000);
+  
+  closeBtn.onclick = () => {
+    clearTimeout(autoHideTimeout);
+    hideToast();
+  };
+  
+  function hideToast() {
+    toast.style.opacity = '0';
+    toast.style.transform = 'translateY(-20px)';
+    setTimeout(() => {
+      host.remove();
+    }, 300);
+  }
 }
 
 function createNotificationPrompt(message) {
