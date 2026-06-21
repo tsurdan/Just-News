@@ -1,4 +1,4 @@
-{
+﻿{
   "manifest_version": 3,
   "name": "Just News",
   "version": "3.0.6",
@@ -55,6 +55,9 @@
         "https://*.israelnationalnews.com/*",
         "https://*.jewishpress.com/*",
         "https://*.kikar.co.il/*",
+        "https://*.bhol.co.il/*",
+        "https://*.makorrishon.co.il/*",
+        "https://*.milifney100.com/*",
         "https://*.c14.co.il/*",
         "https://*.kan.org.il/*",
         "https://*.nytimes.com/*",
@@ -145,6 +148,20 @@
     "page": "options.html",
     "open_in_tab": true
   },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "icons/icon48.png",
+        "more-icons/robot.png",
+        "more-icons/clean.png",
+        "more-icons/cynic.png",
+        "more-icons/optimist.png",
+        "more-icons/conspirator.png",
+        "more-icons/custom.png"
+      ],
+      "matches": ["<all_urls>"]
+    }
+  ],
   "browser_specific_settings": {
     "gecko": {
       "id": "just-news@example.com",
