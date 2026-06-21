@@ -218,7 +218,16 @@ function extractArticleHeadline() {
 
 // Extract article content from article page
 function extractArticleContent() {
+  const MAX_CONTENT_LENGTH = 4000;
+  
   const articleSelectors = [
+    '.article-body',
+    '.ArticleBodyComponent',
+    '.art_body',
+    '.public-DraftEditor-content',
+    '[data-testid="article-body"]',
+    '.caas-body',
+    'article .content',
     'article',
     '[role="article"]',
     '.article-content',
@@ -241,7 +250,11 @@ function extractArticleContent() {
   const unwantedSelectors = [
     'script', 'style', 'nav', 'header', 'footer', 
     'aside', '.sidebar', '.advertisement', '.ad', 
-    '.comments', '.related-articles'
+    '.comments', '.related-articles',
+    '[class*="taboola"]', '[id*="taboola"]',
+    '[class*="outbrain"]', '[id*="outbrain"]',
+    '.social-share', '.share-bar',
+    '.newsletter', '.subscription',
   ];
   
   const clone = articleContainer.cloneNode(true);
@@ -258,6 +271,10 @@ function extractArticleContent() {
       .map(el => el.textContent.trim())
       .filter(t => t.length > 50)
       .join(' ');
+  }
+  
+  if (content.length > MAX_CONTENT_LENGTH) {
+    content = content.substring(0, MAX_CONTENT_LENGTH);
   }
   
   return content;
@@ -496,31 +513,25 @@ async function summarizeArticleHeadline() {
 
 // Show article summary prominently by replacing article body
 function showArticleSummaryPanel(summaryText) {
-  if (!summaryText || summaryText === 'Summary unavailable') return;
+  if (!summaryText || summaryText === 'Summary unavailable' || summaryText === 'Summary not available') return;
   if (document.querySelector('.just-news-summary-panel')) return; // Already shown
   
-  // Find the article content container
-  const articleSelectors = [
-    'article',
-    '[role="article"]',
-    '.article-content',
-    '.post-content',
-    '.entry-content',
-    '.story-body',
-    'main',
-  ];
+  // Step 1: Find the article headline (h1) on the page
+  const h1 = document.querySelector('article h1') ||
+             document.querySelector('[role="article"] h1') ||
+             document.querySelector('main h1') ||
+             document.querySelector('h1');
+  if (!h1) return;
   
-  let articleContainer = null;
-  for (const selector of articleSelectors) {
-    articleContainer = document.querySelector(selector);
-    if (articleContainer) break;
+  // Step 2: Walk up from h1 to find a wrapper that contains the article body content
+  let articleWrapper = h1.parentElement;
+  while (articleWrapper && articleWrapper !== document.body) {
+    const pCount = articleWrapper.querySelectorAll('p').length;
+    const hasBody = articleWrapper.querySelector('.article-body, .ArticleBodyComponent, .art_body, .public-DraftEditor-content');
+    if (pCount >= 2 || hasBody) break;
+    articleWrapper = articleWrapper.parentElement;
   }
-  
-  if (!articleContainer) return;
-  
-  // Find the paragraph content within the article (skip the headline)
-  const paragraphs = articleContainer.querySelectorAll('p');
-  if (paragraphs.length < 2) return;
+  if (!articleWrapper || articleWrapper === document.body) return;
   
   // Create the panel
   const panel = document.createElement('div');
@@ -529,7 +540,10 @@ function showArticleSummaryPanel(summaryText) {
     background: white;
     border: 1px solid #e0e0e0;
     border-radius: 12px;
-    margin: 16px 0;
+    margin: 16px auto;
+    width: 100%;
+    max-width: 780px;
+    box-sizing: border-box;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
     overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -601,57 +615,65 @@ function showArticleSummaryPanel(summaryText) {
   panel.appendChild(tabBar);
   panel.appendChild(contentArea);
   
-  // Hide all article content (paragraphs, images, figures, videos, etc.)
+  // Step 4: Insert panel right after h1 itself (before sub-title)
+  h1.parentNode.insertBefore(panel, h1.nextSibling);
+  
+  // Step 5: Hide all siblings after the panel (sub-title, images, etc.)
   const hiddenElements = [];
-  const allContent = articleContainer.querySelectorAll('p, img, figure, figcaption, picture, video, iframe, .image, .media, blockquote, ul, ol, table, [class*="video"], [class*="player"], [class*="embed"], object, embed, audio, aside, [class*="Video"], [class*="Player"]');
-  allContent.forEach(el => {
-    // Don't hide the h1 headline or our own panel
-    if (el.tagName === 'H1' || el.closest('.just-news-summary-panel')) return;
-    // Don't hide elements outside the article flow
-    if (el.closest('nav') || el.closest('header') || el.closest('footer')) return;
-    hiddenElements.push({ el: el, origDisplay: el.style.display });
-    el.style.display = 'none';
-  });
+  let sibling = panel.nextElementSibling;
+  while (sibling) {
+    const tag = sibling.tagName.toLowerCase();
+    if (tag === 'footer' || tag === 'nav') break;
+    if (sibling.classList.contains('just-news-summary-panel')) {
+      sibling = sibling.nextElementSibling;
+      continue;
+    }
+    hiddenElements.push({ el: sibling, origDisplay: sibling.style.display });
+    sibling.style.setProperty('display', 'none', 'important');
+    sibling = sibling.nextElementSibling;
+  }
+  
+  // Step 6: If h1's parent is not the articleWrapper, also hide following siblings up the tree
+  let ancestor = h1.parentElement;
+  while (ancestor && ancestor !== articleWrapper) {
+    let ancestorSibling = ancestor.nextElementSibling;
+    while (ancestorSibling) {
+      const tag = ancestorSibling.tagName.toLowerCase();
+      if (tag === 'footer' || tag === 'nav') break;
+      hiddenElements.push({ el: ancestorSibling, origDisplay: ancestorSibling.style.display });
+      ancestorSibling.style.setProperty('display', 'none', 'important');
+      ancestorSibling = ancestorSibling.nextElementSibling;
+    }
+    ancestor = ancestor.parentElement;
+  }
   
   let showingSummary = true;
   
   tabSummary.onclick = () => {
     if (showingSummary) return;
     showingSummary = true;
-    // Activate summary tab
     tabSummary.style.background = 'white';
     tabSummary.style.color = '#4285F4';
     tabSummary.style.borderBottom = '3px solid #4285F4';
     tabOriginal.style.background = '#fafafa';
     tabOriginal.style.color = '#888';
     tabOriginal.style.borderBottom = '3px solid transparent';
-    // Show summary, hide original
     contentArea.style.display = '';
-    hiddenElements.forEach(item => item.el.style.display = 'none');
+    hiddenElements.forEach(item => item.el.style.setProperty('display', 'none', 'important'));
   };
   
   tabOriginal.onclick = () => {
     if (!showingSummary) return;
     showingSummary = false;
-    // Activate original tab
     tabOriginal.style.background = 'white';
     tabOriginal.style.color = '#4285F4';
     tabOriginal.style.borderBottom = '3px solid #4285F4';
     tabSummary.style.background = '#fafafa';
     tabSummary.style.color = '#888';
     tabSummary.style.borderBottom = '3px solid transparent';
-    // Hide summary, show original
     contentArea.style.display = 'none';
     hiddenElements.forEach(item => item.el.style.display = item.origDisplay || '');
   };
-  
-  // Insert the panel after the headline (first h1)
-  const h1 = articleContainer.querySelector('h1');
-  if (h1 && h1.parentNode) {
-    h1.parentNode.insertBefore(panel, h1.nextSibling);
-  } else {
-    articleContainer.insertBefore(panel, articleContainer.firstChild);
-  }
 }
 
 // Original function renamed to handle homepage headlines
@@ -1177,6 +1199,9 @@ function setupTooltip(element) {
   if (!articleUrl) return;
   
   element.addEventListener('mouseenter', () => {
+    // Skip tooltip if article summary panel is already on the page
+    if (document.querySelector('.just-news-summary-panel')) return;
+    
     if (tooltipTimeout) {
       clearTimeout(tooltipTimeout);
     }
