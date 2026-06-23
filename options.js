@@ -393,36 +393,42 @@
 
   resetBtn.onclick = () => {
     if (confirm('Are you sure you want to reset all settings? This will clear all data including API keys and custom prompts.')) {
-      chrome.storage.sync.clear(() => {
-        apiProvider.value = 'groq';
-        selectSelected.textContent = 'Groq';
-        document.querySelectorAll('.select-items div').forEach(div => {
-          div.classList.remove('same-as-selected');
+      chrome.storage.sync.get(['premium'], (data) => {
+        const wasPremium = data.premium;
+        chrome.storage.sync.clear(() => {
+          if (wasPremium) {
+            chrome.storage.sync.set({ premium: true });
+          }
+          apiProvider.value = 'groq';
+          selectSelected.textContent = 'Groq';
+          document.querySelectorAll('.select-items div').forEach(div => {
+            div.classList.remove('same-as-selected');
+          });
+          document.querySelector('[data-value="groq"]').classList.add('same-as-selected');
+          updateProviderIcon();
+          
+          apiKey.value = '';
+          apiKey.dataset.real = '';
+          
+          currentCharacterMode = 'robot';
+          updateCharacterModeUI();
+          
+          systemPrompt.value = characterConfigs.robot.systemPrompt;
+          customPrompt.value = characterConfigs.robot.userPrompt;
+          
+          modifiedPrompts = {};
+          modifiedPrompts[currentCharacterMode] = {
+            systemPrompt: systemPrompt.value,
+            userPrompt: customPrompt.value
+          };
+          
+          updateCharCounter(systemPrompt, systemPromptCounter, 1000);
+          updateCharCounter(customPrompt, customPromptCounter, 800);
+          
+          status.textContent = 'Settings Reset!';
+          status.style.color = '#4285F4';
+          setTimeout(() => status.textContent = '', 2000);
         });
-        document.querySelector('[data-value="groq"]').classList.add('same-as-selected');
-        updateProviderIcon();
-        
-        apiKey.value = '';
-        apiKey.dataset.real = '';
-        
-        currentCharacterMode = 'robot';
-        updateCharacterModeUI();
-        
-        systemPrompt.value = characterConfigs.robot.systemPrompt;
-        customPrompt.value = characterConfigs.robot.userPrompt;
-        
-        modifiedPrompts = {};
-        modifiedPrompts[currentCharacterMode] = {
-          systemPrompt: systemPrompt.value,
-          userPrompt: customPrompt.value
-        };
-        
-        updateCharCounter(systemPrompt, systemPromptCounter, 1000);
-        updateCharCounter(customPrompt, customPromptCounter, 800);
-        
-        status.textContent = 'Settings Reset!';
-        status.style.color = '#4285F4';
-        setTimeout(() => status.textContent = '', 2000);
       });
     }
   };
