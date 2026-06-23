@@ -393,8 +393,13 @@
 
   resetBtn.onclick = () => {
     if (confirm('Are you sure you want to reset all settings? This will clear all data including API keys and custom prompts.')) {
-      chrome.storage.sync.clear(() => {
-        apiProvider.value = 'groq';
+      chrome.storage.sync.get(['premium'], (data) => {
+        const wasPremium = data.premium;
+        chrome.storage.sync.clear(() => {
+          if (wasPremium) {
+            chrome.storage.sync.set({ premium: true });
+          }
+          apiProvider.value = 'groq';
         selectSelected.textContent = 'Groq';
         document.querySelectorAll('.select-items div').forEach(div => {
           div.classList.remove('same-as-selected');
@@ -423,6 +428,7 @@
         status.textContent = 'Settings Reset!';
         status.style.color = '#4285F4';
         setTimeout(() => status.textContent = '', 2000);
+        });
       });
     }
   };
