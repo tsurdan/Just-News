@@ -1,5 +1,5 @@
 // limit for non-premium users
-const DAILY_LIMIT = 30;
+const DAILY_LIMIT = 40;
 const API = chrome ?? browser;
 
 if (typeof browser !== 'undefined' && !chrome) {
@@ -19,7 +19,7 @@ actionAPI.onClicked.addListener((tab) => {
   }
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
-const dl = 5 * 6;
+const dl = 5 * 8;
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
