@@ -27,7 +27,7 @@
 
   // Default models for each API provider
   const defaultModels = {
-    groq: 'meta-llama/llama-4-scout-17b-16e-instruct',
+    groq: 'llama-3.3-70b-versatile',
     openai: 'gpt-3.5-turbo',
     claude: 'claude-3-opus',
     gemini: 'gemini-2.5-flash-lite'
@@ -97,7 +97,7 @@
     if (data.preferedLang) {
       preferedLang.value = data.preferedLang;
     } else {
-      preferedLang.value = 'english';
+      preferedLang.value = 'hebrew';
     }
     if (data.apiProvider) {
       apiProvider.value = data.apiProvider;

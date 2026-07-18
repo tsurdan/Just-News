@@ -28,7 +28,7 @@ function generateCacheKey(url, headline, apiOptions = {}) {
     mode: apiOptions.mode || 'robot',
     customPrompt: apiOptions.customPrompt || '',
     systemPrompt: apiOptions.systemPrompt || '',
-    preferedLang: apiOptions.preferedLang || 'english'
+    preferedLang: apiOptions.preferedLang || 'hebrew'
   });
   const settingsHash = simpleHash(settingsString);
   
@@ -453,7 +453,7 @@ async function summarizeArticleHeadline() {
   let model = "";
   let customPrompt = "";
   let systemPrompt = "";
-  let preferedLang = "english";
+  let preferedLang = "hebrew";
   const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.`;
   const defaultPrompt = `Rewrite the headline with these rules:
 
@@ -466,10 +466,10 @@ async function summarizeArticleHeadline() {
     const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang', 'characterMode']);
     apiKey = settings.apiKey || "";
     apiProvider = settings.apiProvider || "groq";
-    model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
+    model = settings.model || "llama-3.3-70b-versatile";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
-    preferedLang = settings.preferedLang || "english";
+    preferedLang = settings.preferedLang || "hebrew";
     var characterMode = settings.characterMode || "robot";
     if (!apiKey) return; // No API key, skip article headline
   } catch (error) {
@@ -702,7 +702,7 @@ async function summarizeHomepageHeadlines(isArticle = false) {
   let model = "";
   let customPrompt = "";
   let systemPrompt = "";
-  let preferedLang = "english";
+  let preferedLang = "hebrew";
   const defaultSystemPrompt = `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article's language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article's main takeaway without needing to read it.`;
   const defaultPrompt = `Rewrite the headline with these rules:
 
@@ -715,10 +715,10 @@ async function summarizeHomepageHeadlines(isArticle = false) {
     const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang', 'characterMode']);
     apiKey = settings.apiKey || "";
     apiProvider = settings.apiProvider || "groq";
-    model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
+    model = settings.model || "llama-3.3-70b-versatile";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
-    preferedLang = settings.preferedLang || "english";
+    preferedLang = settings.preferedLang || "hebrew";
     var characterMode = settings.characterMode || "robot";
     if (!apiKey) {
       if (!isAutomaticProcessing) {
@@ -1385,7 +1385,7 @@ Do not add any text before or after the JSON. Only return the JSON object.`;
 
   let prompt = customPrompt;
   if (preferedLang != 'english') {
-    prompt += `(if ${preferedLang} generate ${preferedLang} headline).`;
+    prompt += `(if content in ${preferedLang} generate ${preferedLang} headline).`;
   } 
   prompt += systemInstructions;
   const response = await chrome.runtime.sendMessage({
