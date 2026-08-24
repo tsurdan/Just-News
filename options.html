@@ -645,10 +645,14 @@
     <div id="step1">
       <label for="apiProvider">API Provider:</label>
       <div class="api-provider-container">
-        <img src="more-icons/groq.png" alt="Groq" class="api-provider-icon" id="providerIcon">
+        <img src="more-icons/gemini.png" alt="Gemini" class="api-provider-icon" id="providerIcon">
         <div class="custom-select">
-          <div class="select-selected" id="selectSelected">Groq</div>
+          <div class="select-selected" id="selectSelected">Gemini</div>
           <div class="select-items select-hide" id="selectItems">
+            <div data-value="gemini" class="same-as-selected">
+              <img src="more-icons/gemini.png" alt="Gemini">
+              Gemini
+            </div>
             <div data-value="groq">
               <img src="more-icons/groq.png" alt="Groq">
               Groq
@@ -661,22 +665,18 @@
               <img src="more-icons/claude.png" alt="Claude">
               Claude
             </div>
-            <div data-value="gemini">
-              <img src="more-icons/gemini.png" alt="Gemini">
-              Gemini
-            </div>
           </div>
         </div>
-        <input type="hidden" id="apiProvider" value="groq">
+        <input type="hidden" id="apiProvider" value="gemini">
       </div>
       <label for="apiKey">API Key:</label>
       <input type="text" id="apiKey" placeholder="Enter your API key" autocomplete="off" maxlength="200">
       <div id="apiKeyLinks" style="margin-top: 8px; margin-bottom: 12px; padding: 10px; background: #f8f9ff; border-radius: 6px; border: 1px solid #e3f2fd;">
         <span style="font-size: 0.85em; color: #666; margin-right: 8px;">Need an API key?</span>
-        <a href="https://console.groq.com/keys" target="_blank" id="groqLink" class="api-key-link">Get Groq API Key</a>
+        <a href="https://aistudio.google.com/app/apikey" target="_blank" id="geminiLink" class="api-key-link">Get Gemini API Key</a>
+        <a href="https://console.groq.com/keys" target="_blank" id="groqLink" class="api-key-link" style="display: none;">Get Groq API Key</a>
         <a href="https://platform.openai.com/api-keys" target="_blank" id="openaiLink" class="api-key-link" style="display: none;">Get OpenAI API Key</a>
         <a href="https://console.anthropic.com/settings/keys" target="_blank" id="claudeLink" class="api-key-link" style="display: none;">Get Claude API Key</a>
-        <a href="https://aistudio.google.com/app/apikey" target="_blank" id="geminiLink" class="api-key-link" style="display: none;">Get Gemini API Key</a>
       </div>
     </div>
 

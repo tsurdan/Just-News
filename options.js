@@ -27,10 +27,10 @@
 
   // Default models for each API provider
   const defaultModels = {
-    groq: 'llama-3.3-70b-versatile',
-    openai: 'gpt-3.5-turbo',
-    claude: 'claude-3-opus',
-    gemini: 'gemini-2.5-flash-lite'
+    groq: 'openai/gpt-oss-20b',
+    openai: 'gpt-5.6-luna',
+    claude: 'claude-haiku-4-5',
+    gemini: 'gemini-3.5-flash-lite'
   };
 
   // Character mode configurations
@@ -399,12 +399,12 @@
           if (wasPremium) {
             chrome.storage.sync.set({ premium: true });
           }
-          apiProvider.value = 'groq';
-          selectSelected.textContent = 'Groq';
+          apiProvider.value = 'gemini';
+          selectSelected.textContent = 'Gemini';
           document.querySelectorAll('.select-items div').forEach(div => {
             div.classList.remove('same-as-selected');
           });
-          document.querySelector('[data-value="groq"]').classList.add('same-as-selected');
+          document.querySelector('[data-value="gemini"]').classList.add('same-as-selected');
           updateProviderIcon();
           
           apiKey.value = '';

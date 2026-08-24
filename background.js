@@ -1,5 +1,5 @@
 // limit for non-premium users
-const DAILY_LIMIT = 40;
+const DAILY_LIMIT = 30;
 
 chrome.action.onClicked.addListener((tab) => {
   // Show loading badge
@@ -7,7 +7,7 @@ chrome.action.onClicked.addListener((tab) => {
   chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color: '#4285F4' });
   chrome.tabs.sendMessage(tab.id, { action: 'summarizeHeadlines' });
 });
-const dl = 5 * 8;
+const dl = 5 * 6;
 
 // Listen for messages from the content script
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
@@ -64,7 +64,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   } else if (request.action === 'AIcall') {
     const apiKey = request.apiKey;
     const model = request.model;
-    const apiProvider = request.apiProvider || "groq";
+    const apiProvider = request.apiProvider || "gemini";
     const systemPrompt = request.systemPrompt && request.systemPrompt.trim().length > 0
       ? request.systemPrompt
       : `Generate an objective, non-clickbait headline for a given article. Keep it robotic, purely informative, and in the article’s language. Match the original title's length. If the original title asks a question, provide a direct answer. The goal is for the user to understand the article’s main takeaway without needing to read it.`;
@@ -81,7 +81,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       // Gemini API key is in the URL as ?key=API_KEY
       baseURL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     } else {
-      baseURL = "https://api.groq.com/openai/v1/chat/completions";
+      baseURL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     }
 
     let prompt = request.prompt;
@@ -104,7 +104,25 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       body = JSON.stringify({
         contents: [
           { role: "user", parts: [{ text: prompt }] }
-        ]
+        ],
+        systemInstruction: { parts: [{ text: systemPrompt }] },
+        generationConfig: {
+          temperature: 0.0,
+          topP: 0.4,
+          maxOutputTokens: 500,
+          // Enforces the {new_headline, article_summary} shape at the API level instead of relying on prompt wording alone.
+          // Field descriptions matter here: without them the model can emit a raw " for text like שב"כ,
+          // which the JSON grammar reads as end-of-string and silently truncates the value.
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              new_headline: { type: "STRING", description: "The rewritten headline. Escape any literal quotation marks in the text as \\\" so they don't end the string early." },
+              article_summary: { type: "STRING", description: "The article summary. Escape any literal quotation marks in the text as \\\" so they don't end the string early." }
+            },
+            required: ["new_headline", "article_summary"]
+          }
+        }
       });
       headers = {
         "Content-Type": "application/json",
@@ -113,18 +131,26 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       };
     } else {
       // OpenAI, Groq (OpenAI compatible)
-      body = JSON.stringify({
+      // gpt-oss models spend tokens on hidden reasoning before content, so they need a bigger budget + low reasoning effort
+      const isGptOss = typeof model === "string" && model.includes("gpt-oss");
+      const requestBody = {
         model: model,
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: prompt }
         ],
         temperature: 0.0,
-        max_tokens: 300,
+        max_tokens: isGptOss ? 1200 : 300,
         top_p: 0.4,
         frequency_penalty: 0.0,
-        presence_penalty: 0.0
-      });
+        presence_penalty: 0.0,
+        // Prompt already asks for the {new_headline, article_summary} JSON shape; this enforces it at the API level
+        response_format: { type: "json_object" }
+      };
+      if (isGptOss) {
+        requestBody.reasoning_effort = "low";
+      }
+      body = JSON.stringify(requestBody);
       headers = {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${apiKey}`
@@ -136,18 +162,22 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       headers: headers,
       body: body,
     })
-      .then(response => {
+      .then(response => response.json().catch(() => ({})).then(data => ({ response, data })))
+      .then(({ response, data }) => {
         if (!response.ok) {
+          const errMsg = (data && data.error && (data.error.message || data.error)) || '';
           if (response.status === 429) {
             throw new Error(`Rate limit. Try again in ${(response.headers.get('retry-after') || 'a few') + ' seconds'}`);
           }
-          if (response.status === 401) {
+          // Groq/OpenAI/Claude use 401 for a bad key; Gemini uses 400/403 with an "API key" message instead
+          const isInvalidKey = response.status === 401
+            || ((response.status === 400 || response.status === 403) && /api key/i.test(String(errMsg)));
+          if (isInvalidKey) {
             throw new Error('Invalid API key');
           }
-          throw new Error('Error fetching summary');
-        } else {
-          return response.json();
+          throw new Error(errMsg || 'Error fetching summary');
         }
+        return data;
       })
       .then(data => {
         let summary;

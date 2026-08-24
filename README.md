@@ -12,7 +12,7 @@
 
 - Scans the page for visible news headlines.
 - Extracts the full article content for each headline.
-- Uses **llama AI via Groq API** to generate a new, informative title.
+- Uses **Google Gemini** (free API key, no credit card needed) to generate a new, informative title. Groq, OpenAI, and Claude are also supported if you prefer another provider.
 - Replaces the original headline directly on the page, in real time.
 
 ---
@@ -22,7 +22,7 @@
 1. Download the extention from [chrome web store](https://chromewebstore.google.com/detail/just-news/bjeicinigicmeicfnibabdfanajpigln)
 2. Enter to your favorite news website
 3. Click on the Just-News extention icon
-4. Follow the guide in the extension popup to generate and add your **Groq API key**.
+4. Follow the guide in the extension popup to generate and add your **free Google Gemini API key**.
 5. Done. No more clickbait headlines.
 
 ---
@@ -65,7 +65,7 @@ For more details check the `privacy policy.md` file
    - Go to `chrome://extensions/`
    - Enable **Developer mode**
    - Click **"Load unpacked"** and select the project folder
-3. Follow the guide in the extension popup to generate and add your **Groq API key**.
+3. Follow the guide in the extension popup to generate and add your **free Google Gemini API key**.
 
 ---
 ## 🤝 Contributing

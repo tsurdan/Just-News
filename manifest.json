@@ -1,7 +1,7 @@
 ﻿{
   "manifest_version": 3,
   "name": "Just News",
-  "version": "3.1.1",
+  "version": "3.2.1",
   "description": "Replaces clickbait headlines with informative summaries",
   "permissions": [
     "activeTab",
@@ -157,7 +157,8 @@
         "more-icons/cynic.png",
         "more-icons/optimist.png",
         "more-icons/conspirator.png",
-        "more-icons/custom.png"
+        "more-icons/custom.png",
+        "more-icons/gemini.png"
       ],
       "matches": ["<all_urls>"]
     }
