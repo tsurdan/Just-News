@@ -20,7 +20,8 @@ let lastScrollY = 0;
 let scrollProcessingTimeout = null;
 let isAutomaticProcessing = false;
 let rateLimitedUntil = 0;
-const RATE_LIMIT_COOLDOWN_MS = 60 * 1000;
+let autoRetryTimeout = null;
+const RATE_LIMIT_COOLDOWN_MS = 20 * 1000;
 const DAILY_RATE_LIMIT_COOLDOWN_MS = 60 * 60 * 1000;
 
 // ============= CACHE UTILITIES =============
@@ -314,6 +315,23 @@ function ipb() {
   return ipu;
 }
 
+// In auto-replace mode there's no guarantee the user will scroll again, so a rate limit
+// needs a self-triggered retry instead of waiting indefinitely for the next scroll event.
+function scheduleAutoRetry(retryAfterSeconds) {
+  if (!autoReplaceHeadlines || autoRetryTimeout) return;
+
+  const delayMs = (retryAfterSeconds ? retryAfterSeconds * 1000 : RATE_LIMIT_COOLDOWN_MS) + 1000;
+  autoRetryTimeout = setTimeout(async () => {
+    autoRetryTimeout = null;
+    if (Date.now() < rateLimitedUntil) return; // a newer rate limit pushed the cooldown further out
+
+    isAutomaticProcessing = true;
+    counter = 0;
+    await summarizeHeadlines();
+    isAutomaticProcessing = false;
+  }, delayMs);
+}
+
 // Setup scroll listener to process headlines as user scrolls
 function setupScrollListener() {
   let isProcessing = false;
@@ -474,7 +492,7 @@ async function summarizeHeadlines() {
 // Handle article page headline replacement
 async function summarizeArticleHeadline() {
   let apiKey = "";
-  let apiProvider = "groq";
+  let apiProvider = "gemini";
   let model = "";
   let customPrompt = "";
   let systemPrompt = "";
@@ -490,8 +508,8 @@ async function summarizeArticleHeadline() {
   try {
     const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang', 'characterMode']);
     apiKey = settings.apiKey || "";
-    apiProvider = settings.apiProvider || "groq";
-    model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
+    apiProvider = settings.apiProvider || "gemini";
+    model = settings.model || "gemini-3.5-flash-lite";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     preferedLang = settings.preferedLang || "english";
@@ -723,7 +741,7 @@ function showArticleSummaryPanel(summaryText) {
 // Original function renamed to handle homepage headlines
 async function summarizeHomepageHeadlines(isArticle = false) {
   let apiKey = "";
-  let apiProvider = "groq";
+  let apiProvider = "gemini";
   let model = "";
   let customPrompt = "";
   let systemPrompt = "";
@@ -739,8 +757,8 @@ async function summarizeHomepageHeadlines(isArticle = false) {
   try {
     const settings = await chrome.storage.sync.get(['apiKey', 'apiProvider', 'model', 'customPrompt', 'systemPrompt', 'preferedLang', 'characterMode']);
     apiKey = settings.apiKey || "";
-    apiProvider = settings.apiProvider || "groq";
-    model = settings.model || "meta-llama/llama-4-scout-17b-16e-instruct";
+    apiProvider = settings.apiProvider || "gemini";
+    model = settings.model || "gemini-3.5-flash-lite";
     customPrompt = settings.customPrompt || defaultPrompt;
     systemPrompt = settings.systemPrompt || defaultSystemPrompt;
     preferedLang = settings.preferedLang || "english";
@@ -918,28 +936,14 @@ async function summarizeHomepageHeadlines(isArticle = false) {
     checkAndShowLashonHaraToast();
   }
   
-  if (succes.length === 0 && errors.length > 0) {
-    // Set rate limit cooldown
+  if (errors.length > 0) {
+    // Detect rate limits even on partial failures - otherwise a headline that got rate-limited
+    // in a batch where others succeeded would never get a cooldown or retry scheduled at all
     let hasRateLimit = false;
+    let minRetryAfter = null;
     errors.forEach(e => {
       let msg = e.reason.message || '';
       if (msg.includes('Rate limit') || msg.includes('exceeded')) {
-        hasRateLimit = true;
-      }
-    });
-    
-    if (hasRateLimit) {
-      rateLimitedUntil = Date.now() + RATE_LIMIT_COOLDOWN_MS;
-    }
-    
-    // Don't show error notifications on article pages or during auto-processing
-    if (isAutomaticProcessing || isArticle) return;
-    
-    let minRetryAfter = null;
-    hasRateLimit = false;
-    errors.forEach(e => {
-      let msg = e.reason.message || '';
-      if (msg.includes('Rate limit')) {
         hasRateLimit = true;
         const match = msg.match(/Try again in (\d+)/);
         if (match) {
@@ -948,12 +952,21 @@ async function summarizeHomepageHeadlines(isArticle = false) {
         }
       }
     });
+
+    if (hasRateLimit) {
+      rateLimitedUntil = Date.now() + (minRetryAfter ? minRetryAfter * 1000 : RATE_LIMIT_COOLDOWN_MS);
+      scheduleAutoRetry(minRetryAfter);
+    }
+
+    // Don't show error notifications on article pages or during auto-processing
+    if (isAutomaticProcessing || isArticle) return;
+
     if (hasRateLimit) {
       let summary = minRetryAfter !== null
         ? `Rate limit. Try again in ${minRetryAfter} seconds`
-        : 'Rate limit. Try again later';
+        : 'Rate limit. Try again in a few moments';
       await createNotification(summary);
-    } else {
+    } else if (succes.length === 0) {
       let errorTypes = new Set();
       errors.forEach(e => {
         let msg = e.reason.message || '';
@@ -1036,9 +1049,6 @@ function parseAIResponseOld(result) {
   
   let sanitizedHeadline = newHeadline
     .replace(/[\r\n]+/g, ' ')
-    .replace(/\\"/g, '"')
-    .replace(/"/g, "'")
-    .replace(/\\/g, '')
     .trim();
   
   if (typeof summary === 'string') {
@@ -1062,7 +1072,7 @@ function parseAIResponseNew(result){
     const parsed = JSON.parse(text);
     if (parsed.new_headline || parsed.headline || parsed.title) {
       return {
-        headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
+        headline: parsed.new_headline || parsed.headline || parsed.title,
         summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
       };
     }
@@ -1079,7 +1089,7 @@ function parseAIResponseNew(result){
     const parsed = JSON.parse(cleanedText);
     if (parsed.new_headline || parsed.headline || parsed.title) {
       return {
-        headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
+        headline: parsed.new_headline || parsed.headline || parsed.title,
         summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
       };
     }
@@ -1094,7 +1104,7 @@ function parseAIResponseNew(result){
       const parsed = JSON.parse(fixedText);
       if (parsed.new_headline || parsed.headline || parsed.title) {
         return {
-          headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
+          headline: parsed.new_headline || parsed.headline || parsed.title,
           summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
         };
       }
@@ -1108,7 +1118,7 @@ function parseAIResponseNew(result){
       const parsed = JSON.parse(jsonMatch[0]);
       if (parsed.new_headline || parsed.headline || parsed.title) {
         return {
-          headline: (parsed.new_headline || parsed.headline || parsed.title).replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
+          headline: parsed.new_headline || parsed.headline || parsed.title,
           summary: parsed.article_summary || parsed.summary || parsed.description || 'Summary not available'
         };
       }
@@ -1120,21 +1130,30 @@ function parseAIResponseNew(result){
   
   if (headline) {
     const summary = extractSecondFieldValue(text, 'article_summary');
-    return {
-      headline: headline.replace(/\\"/g, '"').replace(/"/g, "'").replace(/\\/g, ''),
-      summary: summary || 'Summary not available'
-    };
+    return { headline, summary: summary || 'Summary not available' };
   }
   
   throw new Error('Could not extract headline from AI response');
 }
 
+// Single choke point for quote/backslash cleanup, regardless of which parser above produced the result.
+// Models sometimes over-escape a quote (e.g. \\" instead of \"); this always resolves to a plain " with no leftover backslash.
+function normalizeQuotes(text) {
+  if (typeof text !== 'string') return text;
+  return text.replace(/\\"/g, '"').replace(/\\/g, '');
+}
+
 function parseAIResponse(result) {
+  let parsed;
   try {
-    return parseAIResponseOld(result);
+    parsed = parseAIResponseOld(result);
   } catch {
-    return parseAIResponseNew(result);
+    parsed = parseAIResponseNew(result);
   }
+  return {
+    headline: normalizeQuotes(parsed.headline),
+    summary: normalizeQuotes(parsed.summary)
+  };
 }
 
 function extractFirstFieldValue(text, fieldName) {
@@ -1156,7 +1175,6 @@ function extractFirstFieldValue(text, fieldName) {
   }
   
   let value = text.substring(valueStart, valueEnd);
-  value = value.replace(/\\"/g, '"').replace(/\\/g, '');
   
   return value;
 }
@@ -1177,7 +1195,6 @@ function extractSecondFieldValue(text, fieldName) {
   }
   
   let value = text.substring(valueStart, valueEnd);
-  value = value.replace(/\\"/g, '"').replace(/\\/g, '');
   
   return value;
 }
@@ -1406,6 +1423,10 @@ Article: ${content}
 IMPORTANT: You must return your response in this exact JSON format:
 {"new_headline": "<your rewritten headline>", "article_summary": "${summaryInstruction}"}
 
+The original headline is ${sourceHeadline.length} characters long. "new_headline" must be no longer than ${sourceHeadline.length} characters - shorter is fine, longer is not allowed.
+
+If the headline or summary contains quotation marks (for example Hebrew abbreviations like שב"כ), escape them as \\" inside the JSON string values so the JSON stays valid.
+
 Do not add any text before or after the JSON. Only return the JSON object.`;
 
   let prompt = customPrompt;
@@ -1467,18 +1488,8 @@ function createApiKeyPrompt(message, currentKey = '') {
     text-align: left;
   `;
 
-  const stepIndicator = document.createElement('div');
-  stepIndicator.style.cssText = `
-    text-align: center;
-    font-size: 12px;
-    color: #888;
-    margin-bottom: 8px;
-    letter-spacing: 0.5px;
-  `;
-  stepIndicator.textContent = 'STEP 1 OF 2';
-
   const title = document.createElement('h3');
-  title.textContent = 'Connect Your AI Provider';
+  title.textContent = 'One-Time Setup';
   title.style.cssText = `
     text-align: center;
     font-size: 18px;
@@ -1490,25 +1501,39 @@ function createApiKeyPrompt(message, currentKey = '') {
 
   const stepsContainer = document.createElement('div');
   stepsContainer.style.cssText = `
-    margin-bottom: 24px;
-    padding: 16px;
-    background: #f8f9fa;
-    border-radius: 8px;
-    border-left: 4px solid #4285F4;
+    margin-bottom: 20px;
     direction: ltr;
   `;
 
+  function createStepLabel(number, text) {
+    const label = document.createElement('div');
+    label.style.cssText = `
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      direction: ltr;
+    `;
+    label.innerHTML = `
+      <span style="background: #4285F4; color: white; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0;">${number}</span>
+      <span style="font-size: 13px; font-weight: 600; color: #333;">${text}</span>
+    `;
+    return label;
+  }
+
+  const step1Label = createStepLabel(1, 'Get your key');
+
   const step1 = document.createElement('a');
-  step1.href = 'https://console.groq.com/';
+  step1.href = 'https://aistudio.google.com/apikey';
   step1.target = '_blank';
   step1.style.cssText = `
     display: flex;
-    align-items: start;
+    align-items: center;
     font-size: 14px;
     color: #333;
     direction: ltr;
     text-decoration: none;
-    margin-bottom: 12px;
+    margin-bottom: 20px;
     padding: 12px;
     border-radius: 8px;
     transition: all 0.2s ease;
@@ -1518,13 +1543,14 @@ function createApiKeyPrompt(message, currentKey = '') {
     box-shadow: 0 2px 4px rgba(66, 133, 244, 0.1);
   `;
   
+  const geminiIconUrl = chrome.runtime.getURL('more icons/gemini.png');
   step1.innerHTML = `
-    <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">1</span>
+    <img src="${geminiIconUrl}" alt="" style="width: 28px; height: 28px; margin-right: 12px; flex-shrink: 0;">
     <div style="flex: 1;">
-      <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Sign up to Groq AI</div>
-      <div style="font-size: 12px; color: #666;">Create your free account &bull; Click to open</div>
+      <div style="font-weight: 600; color: #333; margin-bottom: 2px;">Get a free Gemini API key</div>
+      <div style="font-size: 12px; color: #666;">100% free, no credit card needed</div>
     </div>
-    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">&rarr;</span>
+    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">&#8599;</span>
   `;
 
   step1.onmouseover = () => {
@@ -1540,67 +1566,16 @@ function createApiKeyPrompt(message, currentKey = '') {
     step1.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
   };
 
-  const step2 = document.createElement('a');
-  step2.href = 'https://console.groq.com/keys';
-  step2.target = '_blank';
-  step2.style.cssText = `
-    display: flex;
-    align-items: start;
-    font-size: 14px;
-    color: #333;
-    direction: ltr;
-    text-decoration: none;
-    margin-bottom: 12px;
-    padding: 12px;
-    border-radius: 8px;
-    transition: all 0.2s ease;
-    cursor: pointer;
-    background: rgba(66, 133, 244, 0.05);
-    border: 2px solid rgba(66, 133, 244, 0.2);
-    box-shadow: 0 2px 4px rgba(66, 133, 244, 0.1);
-  `;
-  
-  step2.innerHTML = `
-    <span style="background: #4285F4; color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; margin-right: 12px; flex-shrink: 0; box-shadow: 0 2px 4px rgba(66, 133, 244, 0.3);">2</span>
-    <div style="flex: 1;">
-      <div style="font-weight: 600; color: #4285F4; margin-bottom: 2px;">Generate your key</div>
-      <div style="font-size: 12px; color: #666;">Create your API key &bull; Click to open</div>
-    </div>
-    <span style="color: #4285F4; font-size: 16px; margin-left: 8px;">&rarr;</span>
-  `;
+  const step2Label = createStepLabel(2, 'Paste it below');
 
-  step2.onmouseover = () => {
-    step2.style.background = 'rgba(66, 133, 244, 0.1)';
-    step2.style.borderColor = '#4285F4';
-    step2.style.transform = 'translateY(-2px)';
-    step2.style.boxShadow = '0 4px 12px rgba(66, 133, 244, 0.2)';
-  };
-  step2.onmouseout = () => {
-    step2.style.background = 'rgba(66, 133, 244, 0.05)';
-    step2.style.borderColor = 'rgba(66, 133, 244, 0.2)';
-    step2.style.transform = 'translateY(0)';
-    step2.style.boxShadow = '0 2px 4px rgba(66, 133, 244, 0.1)';
-  };
-
+  stepsContainer.appendChild(step1Label);
   stepsContainer.appendChild(step1);
-  stepsContainer.appendChild(step2);
-  
-  const inputLabel = document.createElement('label');
-  inputLabel.textContent = 'Paste your key here:';
-  inputLabel.style.cssText = `
-    display: block;
-    font-size: 14px;
-    color: #333;
-    font-weight: 600;
-    margin-bottom: 8px;
-    direction: ltr;
-    text-align: left;
-  `;
+  stepsContainer.appendChild(step2Label);
 
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentKey;
-  input.placeholder = 'gsk...';
+  input.placeholder = 'AIzaSy...';
   input.style.cssText = `
     width: 100%;
     padding: 12px;
@@ -1692,11 +1667,10 @@ function createApiKeyPrompt(message, currentKey = '') {
   buttonContainer.appendChild(submitButton);
   buttonContainer.appendChild(cancelButton);
   
-  promptBox.appendChild(stepIndicator);
+  stepsContainer.appendChild(input);
+
   promptBox.appendChild(title);
   promptBox.appendChild(stepsContainer);
-  promptBox.appendChild(inputLabel);
-  promptBox.appendChild(input);
   promptBox.appendChild(helpText);
   promptBox.appendChild(buttonContainer);
   overlay.appendChild(promptBox);
@@ -1814,18 +1788,22 @@ function showLashonHaraToast() {
 
 // Check if we should show the reminder toast (once per day)
 async function checkAndShowReminderToast() {
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  
+  const REMINDER_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // once a week - daily was too naggy
+
   try {
     const { lastReminderToastShown } = await chrome.storage.local.get('lastReminderToastShown');
     const now = Date.now();
-    
-    if (!lastReminderToastShown || (now - lastReminderToastShown) > ONE_DAY_MS) {
-      await chrome.storage.local.set({ lastReminderToastShown: now });
-      showReminderToast();
-    }
-  } catch (error) {
+    if (lastReminderToastShown && (now - lastReminderToastShown) < REMINDER_INTERVAL_MS) return;
+
+    // Small random delay + re-check guards against several tabs opened at once all winning the race
+    await new Promise(resolve => setTimeout(resolve, Math.random() * 500));
+    const recheck = await chrome.storage.local.get('lastReminderToastShown');
+    if (recheck.lastReminderToastShown && (Date.now() - recheck.lastReminderToastShown) < REMINDER_INTERVAL_MS) return;
+
+    await chrome.storage.local.set({ lastReminderToastShown: Date.now() });
     showReminderToast();
+  } catch (error) {
+    // Don't show on error - defaulting to "always show" on failure is how this became too frequent
   }
 }
 
@@ -1845,28 +1823,28 @@ function showReminderToast() {
   toast.style.cssText = `
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     background: white;
     color: #333;
-    padding: 12px 16px;
-    border-radius: 10px;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    padding: 8px 12px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-size: 14px;
+    font-size: 12.5px;
     opacity: 0;
     transform: translateY(-20px);
     transition: all 0.3s ease;
-    border-left: 4px solid #4285F4;
-    max-width: 300px;
+    border-left: 3px solid #4285F4;
+    max-width: 240px;
   `;
   
   const icon = document.createElement('img');
   icon.src = chrome.runtime.getURL('icons/icon48.png');
-  icon.style.cssText = 'width: 24px; height: 24px; border-radius: 4px;';
+  icon.style.cssText = 'width: 18px; height: 18px; border-radius: 4px; flex-shrink: 0;';
   
   const text = document.createElement('span');
   text.textContent = 'Click the Just News icon to transform headlines';
-  text.style.cssText = 'flex: 1; line-height: 1.4;';
+  text.style.cssText = 'flex: 1; line-height: 1.35;';
   
   const closeBtn = document.createElement('button');
   closeBtn.innerHTML = '&times;';
