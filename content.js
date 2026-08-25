@@ -355,7 +355,14 @@ function setupScrollListener() {
 
 async function initializeContentScript() {
   if (isInitialized) return;
-  
+
+  // Legacy Groq keys (format "gsk_...") saved before Gemini became the default would otherwise get
+  // silently sent to the Gemini API and fail. Clearing it makes the "no key" flow below prompt a fresh one.
+  const { apiKey: existingKey, apiProvider: savedProvider } = await chrome.storage.sync.get(['apiKey', 'apiProvider']);
+  if (existingKey && existingKey.startsWith('gsk_') && (savedProvider || 'gemini') === 'gemini') {
+    await chrome.storage.sync.set({ apiKey: '' });
+  }
+
   // Initialize premium status
   await initializePremiumStatus();
   
