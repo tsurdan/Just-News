@@ -184,8 +184,16 @@ function isArticlePage() {
   // Check that there aren't too many links (homepage indicator)
   const links = document.querySelectorAll('a[href]');
   const h2s = document.querySelectorAll('h2, h3');
-  // Homepages typically have many headline links relative to content
-  if (h2s.length > 10 && links.length > 50) return false;
+  // Homepages typically have many headline links relative to content.
+  // Cards each hold a short teaser <p>, while a real article keeps its text in one container.
+  if (h2s.length > 10 && links.length > 50) {
+    const textByContainer = new Map();
+    paragraphs.forEach(p => {
+      const container = p.closest('article, [role="article"], .article-content, .post-content, .entry-content, .story-body');
+      textByContainer.set(container, (textByContainer.get(container) || 0) + p.textContent.trim().length);
+    });
+    if (Math.max(0, ...textByContainer.values()) < 1500) return false;
+  }
   
   return true;
 }
@@ -239,15 +247,9 @@ function extractArticleContent() {
   ];
   
   let articleContainer = null;
-  for (const selector of articleSelectors) {
-    articleContainer = document.querySelector(selector);
-    if (articleContainer) break;
-  }
-  
-  if (!articleContainer) {
-    articleContainer = document.body;
-  }
-  
+  let articleContainerFound = false;
+  let content = '';
+
   const unwantedSelectors = [
     'script', 'style', 'nav', 'header', 'footer', 
     'aside', '.sidebar', '.advertisement', '.ad', 
@@ -257,21 +259,38 @@ function extractArticleContent() {
     '.social-share', '.share-bar',
     '.newsletter', '.subscription',
   ];
+
+  const textFrom = (container) => {
+    const clone = container.cloneNode(true);
+    unwantedSelectors.forEach(selector => {
+      clone.querySelectorAll(selector).forEach(el => el.remove());
+    });
+
+    const paragraphs = Array.from(clone.querySelectorAll('p'));
+    let text = paragraphs.map(p => p.textContent.trim()).filter(t => t.length > 0).join(' ');
+
+    if (!text || text.length < 100) {
+      const textElements = Array.from(clone.querySelectorAll('div, span'));
+      text = textElements
+        .map(el => el.textContent.trim())
+        .filter(t => t.length > 50)
+        .join(' ');
+    }
+    return text;
+  };
+
+  // The first matching selector can be an empty placeholder, so keep looking until one has real text.
+  for (const selector of articleSelectors) {
+    articleContainer = document.querySelector(selector);
+    if (!articleContainer) continue;
+    articleContainerFound = true;
+    const text = textFrom(articleContainer);
+    if (text.length > content.length) content = text;
+    if (content.length >= 100) break;
+  }
   
-  const clone = articleContainer.cloneNode(true);
-  unwantedSelectors.forEach(selector => {
-    clone.querySelectorAll(selector).forEach(el => el.remove());
-  });
-  
-  const paragraphs = Array.from(clone.querySelectorAll('p'));
-  let content = paragraphs.map(p => p.textContent.trim()).filter(t => t.length > 0).join(' ');
-  
-  if (!content || content.length < 100) {
-    const textElements = Array.from(clone.querySelectorAll('div, span'));
-    content = textElements
-      .map(el => el.textContent.trim())
-      .filter(t => t.length > 50)
-      .join(' ');
+  if (!articleContainerFound) {
+    content = textFrom(document.body);
   }
   
   if (content.length > MAX_CONTENT_LENGTH) {
@@ -374,12 +393,21 @@ async function initializeContentScript() {
     }
     
     if (autoReplaceHeadlines) {
+      // Flagged as automatic so a failure doesn't pop up a notification or the API-key prompt on every page load
+      const runAutomatically = async () => {
+        isAutomaticProcessing = true;
+        try {
+          await summarizeHeadlines();
+        } finally {
+          isAutomaticProcessing = false;
+        }
+      };
       if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', () => {
-          setTimeout(() => summarizeHeadlines(), 500);
+          setTimeout(runAutomatically, 500);
         });
       } else {
-        setTimeout(() => summarizeHeadlines(), 500);
+        setTimeout(runAutomatically, 500);
       }
       setupScrollListener();
     } else {
@@ -567,15 +595,20 @@ function showArticleSummaryPanel(summaryText) {
              document.querySelector('h1');
   if (!h1) return;
   
-  // Step 2: Walk up from h1 to find a wrapper that contains the article body content
+  // Step 2: Walk up from h1 until the wrapper holds most of the article text (header and body are often separate blocks)
+  const longParagraphs = Array.from(document.querySelectorAll('p')).filter(p => p.textContent.trim().length > 80);
   let articleWrapper = h1.parentElement;
+  let firstWrapperWithText = null;
   while (articleWrapper && articleWrapper !== document.body) {
     const pCount = articleWrapper.querySelectorAll('p').length;
     const hasBody = articleWrapper.querySelector('.article-body, .ArticleBodyComponent, .art_body, .public-DraftEditor-content');
-    if (pCount >= 2 || hasBody) break;
+    if (!firstWrapperWithText && (pCount >= 2 || hasBody)) firstWrapperWithText = articleWrapper;
+    const holdsMostText = longParagraphs.length > 0 && longParagraphs.filter(p => articleWrapper.contains(p)).length >= longParagraphs.length * 0.5;
+    if (hasBody || holdsMostText) break;
     articleWrapper = articleWrapper.parentElement;
   }
-  if (!articleWrapper || articleWrapper === document.body) return;
+  if (!articleWrapper || articleWrapper === document.body) articleWrapper = firstWrapperWithText;
+  if (!articleWrapper) return;
   
   // Create the panel
   const panel = document.createElement('div');
@@ -1187,8 +1220,13 @@ function typeHeadline(element, text, fromCache = false) {
   
   let targetElement = element;
   
-  const textSpan = element.querySelector('span');
-  if (textSpan && textSpan.textContent.trim()) {
+  // Cards often hold a title plus teaser/time/category spans; replace only the title part.
+  const heading = element.querySelector('h1, h2, h3, h4, h5, h6');
+  const spans = Array.from(element.querySelectorAll('span')).filter(s => s.textContent.trim());
+  const textSpan = spans.sort((a, b) => b.textContent.trim().length - a.textContent.trim().length)[0];
+  if (heading && heading.textContent.trim()) {
+    targetElement = heading;
+  } else if (textSpan) {
     targetElement = textSpan;
   } else {
     const link = element.querySelector('a');
