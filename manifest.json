@@ -1,7 +1,7 @@
 ﻿{
   "manifest_version": 3,
   "name": "Just News",
-  "version": "3.2.2",
+  "version": "3.2.3",
   "description": "Replaces clickbait headlines with informative summaries",
   "permissions": [
     "activeTab",
@@ -139,7 +139,33 @@
         "https://*.deutschlandfunk.de/*",
         "https://*.heise.de/*",
         "https://*.golem.de/*",
-        "https://tsurdan.github.io/*"
+        "https://tsurdan.github.io/*",
+        "https://*.dailymail.com/*",
+        "https://*.dailymail.co.uk/*",
+        "https://*.mirror.co.uk/*",
+        "https://*.bbc.co.uk/*",
+        "https://*.thesun.co.uk/*",
+        "https://*.telegraph.co.uk/*",
+        "https://*.independent.co.uk/*",
+        "https://*.express.co.uk/*",
+        "https://*.metro.co.uk/*",
+        "https://*.standard.co.uk/*",
+        "https://*.thetimes.co.uk/*",
+        "https://*.thetimes.com/*",
+        "https://*.news.sky.com/*",
+        "https://*.itv.com/*",
+        "https://*.inews.co.uk/*",
+        "https://*.eveningexpress.co.uk/*",
+        "https://*.manchestereveningnews.co.uk/*",
+        "https://*.liverpoolecho.co.uk/*",
+        "https://*.walesonline.co.uk/*",
+        "https://*.scotsman.com/*",
+        "https://*.heraldscotland.com/*",
+        "https://*.dailyrecord.co.uk/*",
+        "https://*.theneweuropean.co.uk/*",
+        "https://*.spectator.co.uk/*",
+        "https://*.newstatesman.com/*",
+        "https://*.unherd.com/*"
       ],
       "js": [
         "content.js"
